@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
 import { 
   Menu, X, Search, Briefcase, GraduationCap, 
-  ChevronRight, Clock, CheckCircle2, User, FileText, 
+  Clock, CheckCircle2, User, FileText, 
   DollarSign, MessageCircle, Mail, Lock, Phone, Building, 
   Store, LogOut, Plus, ChevronDown, 
-  XCircle, ArrowRight, ShieldCheck, CreditCard, Star,
-  UploadCloud
+  XCircle, ArrowRight, ShieldCheck, CreditCard, Star
 } from 'lucide-react';
 
 const initialUsers = [
