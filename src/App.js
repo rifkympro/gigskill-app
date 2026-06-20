@@ -11,8 +11,8 @@ import {
 
 // Data awal (Dummy Data) untuk demonstrasi
 const initialUsers = [
-  { id: 'u1', role: 'student', name: 'Joko Subianto (demo)', email: 'jokosubianto@student.com', password: '123', univ: 'unpam' },
-  { id: 'u2', role: 'umkm', name: 'Toko Kue Ibu Tin', email: 'toko@ibu.com', password: '123', phone: '08123456789' },
+  { id: 'u1', role: 'student', name: 'Joko Subianto (demo)', email: 'budi@student.com', password: '123', univ: 'unpam' },
+  { id: 'u2', role: 'umkm', name: 'Toko Kue Ibu', email: 'toko@ibu.com', password: '123', phone: '08123456789' },
   { id: 'u3', role: 'admin', name: 'Super Admin', email: 'admin@gigskill.com', password: '123' }
 ];
 
@@ -959,4 +959,3 @@ function Footer() {
 
 
 ```
-
