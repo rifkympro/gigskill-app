@@ -98,18 +98,26 @@ const initialProjects = [
   }
 ];
 
-const initialMessages = {
-  'chat_u1_u2': [
-    { id: 1, senderId: 'u1', text: 'Halo kak, saya tertarik dengan project desain logo yang diposting. Boleh saya tanya-tanya?', time: '10:00' },
-    { id: 2, senderId: 'u2', text: 'Halo Joko! Boleh, silakan, mau tanya apa?', time: '10:05' },
-  ]
-};
+const initialMessages = [
+  { id: 'm_1', chatId: 'chat_u1_u2_p1', senderId: 'u1', text: 'Halo kak, saya tertarik dengan project desain logo yang diposting. Boleh saya tanya-tanya?', timestamp: '10:00' },
+  { id: 'm_2', chatId: 'chat_u1_u2_p1', senderId: 'u2', text: 'Halo Joko! Boleh, silakan, mau tanya apa?', timestamp: '10:05' }
+];
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState('landing');
   const [users, setUsers] = React.useState(() => {
     const saved = localStorage.getItem('gigskill_users');
-    return saved ? JSON.parse(saved) : initialUsers;
+    let parsedUsers = saved ? JSON.parse(saved) : initialUsers;
+    const appVersion = localStorage.getItem('gigskill_app_version_v3');
+    if (!appVersion) {
+      parsedUsers = parsedUsers.map(u => {
+        if (u.id === 'u1') return { ...u, balance: 300000 };
+        if (u.id === 'u2') return { ...u, balance: 5000000 };
+        return u;
+      });
+      localStorage.setItem('gigskill_app_version_v3', 'v3');
+    }
+    return parsedUsers;
   });
   const [projects, setProjects] = React.useState(() => {
     const saved = localStorage.getItem('gigskill_projects');
@@ -117,7 +125,22 @@ export default function App() {
   });
   const [messages, setMessages] = React.useState(() => {
     const saved = localStorage.getItem('gigskill_messages');
-    return saved ? JSON.parse(saved) : initialMessages;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+        if (typeof parsed === 'object' && parsed !== null) {
+          let arr = [];
+          Object.values(parsed).forEach(v => {
+            if (Array.isArray(v)) arr = [...arr, ...v];
+          });
+          return arr;
+        }
+      } catch(e) {
+        return initialMessages;
+      }
+    }
+    return initialMessages;
   });
   const [transactions, setTransactions] = React.useState(() => {
     const saved = localStorage.getItem('gigskill_transactions');
@@ -169,33 +192,6 @@ export default function App() {
   const onStartChat = (partnerId, projectId) => {
     if (projectId) {
       setActiveChatContext(projectId);
-      const studentId = currentUser.role === 'student' ? currentUser.id : partnerId;
-      const umkmId = currentUser.role === 'umkm' ? currentUser.id : partnerId;
-      const chatId = `chat_${studentId}_${umkmId}`;
-      
-      setMessages(prev => {
-        const hasContext = prev.some(m => m.chatId === chatId && m.isContext && m.projectId === projectId);
-        if (!hasContext) {
-          const project = projects.find(p => p.id === projectId);
-          const applicant = project?.applicants.find(a => a.studentId === studentId);
-          const status = applicant ? applicant.status : project?.status;
-          
-          if (project) {
-            const studentInfo = applicant ? `\nMahasiswa: ${applicant.studentName}` : '';
-            const contextMsg = {
-              id: 'm_' + Date.now(),
-              chatId,
-              senderId: 'system',
-              text: `📋 KONTEKS PROJECT\nProject: ${project.title}\nUMKM: ${project.umkmName}${studentInfo}\nBudget: Rp ${Number(project.budget).toLocaleString('id-ID')}\nStatus: ${project.status === 'Selesai' ? 'Selesai' : status}`,
-              timestamp: new Date().toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'}),
-              isContext: true,
-              projectId
-            };
-            return [...prev, contextMsg];
-          }
-        }
-        return prev;
-      });
     } else {
       setActiveChatContext(null);
     }
@@ -320,7 +316,7 @@ export default function App() {
     setProjects(prev => prev.map(p => {
       if (p.id === projectId && p.status === 'Menunggu Review') {
         if (isAccepted) {
-          // Transfer balance
+          if (p.paymentStatus === 'Sudah Dibayar') return { ...p, status: 'Selesai' };
           setUsers(usersList => usersList.map(u => {
             if (u.id === p.umkmId) return { ...u, balance: (u.balance || 0) - Number(p.budget) };
             if (p.applicants.some(a => a.status === 'Diterima' && a.studentId === u.id)) {
@@ -328,16 +324,17 @@ export default function App() {
             }
             return u;
           }));
-          return { ...p, status: 'Selesai' };
+          return { ...p, status: 'Selesai', paymentStatus: 'Sudah Dibayar' };
         } else {
           return { 
-            ...p, 
-            status: 'Menunggu Banding',
+             ...p, 
+             status: 'Menunggu Banding',
             banding: {
               reason,
               studentResponse: '',
               status: 'Menunggu Banding',
-              date: null
+              date: null,
+              bandingSubmittedAt: null
             }
           };
         }
@@ -357,13 +354,14 @@ export default function App() {
             ...p.banding,
             studentResponse,
             status: 'Banding Berlangsung',
-            date: new Date().toISOString()
+            date: new Date().toISOString(),
+            bandingSubmittedAt: Date.now()
           }
         };
       }
       return p;
     }));
-    showToast('Banding berhasil dikirim! Menunggu admin.');
+    showToast('Banding berhasil dikirim! Batas waktu 2 hari dimulai.');
   };
 
   const handleCompleteProject = (projectId) => {
@@ -409,7 +407,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col overflow-x-hidden w-full max-w-[100vw]">
       {toast.show && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[200]">
           <div
@@ -435,11 +433,13 @@ export default function App() {
         </div>
       )}
 
-      <Navbar
-        navigateTo={navigateTo}
-        currentUser={currentUser}
-        handleLogout={handleLogout}
-      />
+      {!currentPage.includes('Dashboard') && (
+        <Navbar
+          navigateTo={navigateTo}
+          currentUser={currentUser}
+          handleLogout={handleLogout}
+        />
+      )}
 
       <main className="flex-grow flex flex-col relative">
         {currentPage === 'landing' && (
@@ -463,7 +463,7 @@ export default function App() {
 
         {currentPage === 'studentDashboard' &&
           currentUser?.role === 'student' && (
-            <StudentDashboard
+            <StudentDashboard onLogout={handleLogout}
               currentUser={currentUser}
               users={users}
               projects={projects}
@@ -483,7 +483,7 @@ export default function App() {
 
         {currentPage === 'umkmDashboard' &&
           currentUser?.role === 'umkm' && (
-            <UMKMDashboard
+            <UMKMDashboard onLogout={handleLogout}
               currentUser={currentUser}
               users={users}
               projects={projects}
@@ -503,7 +503,7 @@ export default function App() {
 
         {currentPage === 'adminDashboard' &&
           currentUser?.role === 'admin' && (
-            <AdminDashboard showToast={showToast} users={users} setUsers={setUsers} projects={projects} setProjects={setProjects} transactions={transactions} setTransactions={setTransactions} />
+            <AdminDashboard onLogout={handleLogout} showToast={showToast} users={users} setUsers={setUsers} projects={projects} setProjects={setProjects} transactions={transactions} setTransactions={setTransactions} />
           )}
       </main>
 
@@ -519,7 +519,16 @@ export default function App() {
             </div>
             <div className="text-slate-600 text-sm space-y-4 max-h-[60vh] overflow-y-auto pr-2">
               {footerPopup === 'tentang' && (
-                <p>GigSkill adalah platform micro-credential inovatif yang dirancang khusus untuk menjembatani mahasiswa dengan UMKM (Usaha Mikro, Kecil, dan Menengah). Misi kami adalah memberdayakan mahasiswa dengan pengalaman nyata sambil membantu UMKM mendapatkan talenta kreatif.</p>
+                <div>
+                  <p className="mb-4">GigSkill adalah platform micro-credential inovatif yang dirancang khusus untuk menjembatani mahasiswa dengan UMKM (Usaha Mikro, Kecil, dan Menengah). Misi kami adalah memberdayakan mahasiswa dengan pengalaman nyata sambil membantu UMKM mendapatkan talenta kreatif.</p>
+                  <h4 className="font-bold text-slate-800 mb-2">KELOMPOK 7</h4>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li>1. RIPKI MAULANA â€” 251010504293</li>
+                    <li>2. MUHAMAD SOFIYAN â€” 251010502197</li>
+                    <li>3. FARAH ZAFIRA ROSYADI â€” 251010502335</li>
+                    <li>4. NAJMA NAURA TSABITA â€” 251010502277</li>
+                  </ul>
+                </div>
               )}
               {footerPopup === 'panduan' && (
                 <ul className="list-disc pl-5 space-y-2">
@@ -545,13 +554,8 @@ export default function App() {
   );
 }
 
-function Navbar({
-  navigateTo,
-  currentUser,
-  handleLogout
-}) {
-  const [isMobileMenuOpen, setIsMobileMenuOpen] =
-    useState(false);
+function Navbar({ navigateTo, currentUser, handleLogout }) {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const getRoleIcon = () => {
     if (!currentUser) {
@@ -579,7 +583,7 @@ function Navbar({
         <div className="h-20 flex items-center justify-between">
           <div
             className="flex items-center cursor-pointer group"
-            onClick={() => navigateTo('landing')}
+            onClick={() => navigateTo(currentUser ? `${currentUser.role}Dashboard` : 'landing')}
           >
             <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center mr-3">
               <Briefcase
@@ -621,38 +625,31 @@ function Navbar({
               </>
             ) : (
               <>
-                <div className="flex items-center space-x-3 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
-                  <div
-                    className={
-                      'w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm ' +
-                      (currentUser.role === 'umkm'
-                        ? 'bg-green-500'
-                        : currentUser.role === 'admin'
-                        ? 'bg-purple-600'
-                        : 'bg-blue-600')
-                    }
+                <button 
+                    onClick={() => navigateTo(`${currentUser.role}Dashboard`)}
+                    className="flex items-center gap-3 p-1.5 pr-4 bg-slate-50 hover:bg-slate-100 rounded-full border border-slate-200 transition-colors text-left"
                   >
-                    {getRoleIcon()}
-                  </div>
-
-                  <div className="flex flex-col">
-                    <span className="text-sm font-bold text-slate-700 leading-none">
-                      {currentUser.name}
-                    </span>
-
-                    <span className="text-[10px] text-slate-400 font-semibold uppercase mt-0.5">
-                      {currentUser.role}
-                    </span>
-                  </div>
-                </div>
-
-                <button
-                  onClick={handleLogout}
-                  className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                  title="Keluar"
-                >
-                  <LogOut size={20} />
-                </button>
+                    <div
+                      className={
+                        'w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-sm ' +
+                        (currentUser.role === 'umkm'
+                          ? 'bg-green-500'
+                          : currentUser.role === 'admin'
+                          ? 'bg-purple-600'
+                          : 'bg-blue-600')
+                      }
+                    >
+                      {getRoleIcon()}
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-sm font-bold text-slate-700 leading-none">
+                        {currentUser.name}
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-bold uppercase mt-0.5">
+                        {currentUser.role}
+                      </span>
+                    </div>
+                  </button>
               </>
             )}
           </div>
@@ -837,7 +834,7 @@ function RegisterPage({
   };
 
   return (
-    <div className="min-h-[calc(100vh-80px)] flex items-center justify-center px-4 py-12 bg-slate-50">
+    <div className="min-h-screen flex items-center justify-center px-4 py-12 bg-slate-50">
       <div className="bg-white w-full max-w-lg rounded-3xl shadow-xl border border-slate-200 p-8">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-extrabold text-slate-900 mb-2">
@@ -1055,7 +1052,7 @@ function RegisterPage({
                     password: e.target.value
                   })
                 }
-                placeholder="••••••••"
+                placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
                 className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-500 transition-all font-medium"
               />
             </div>
@@ -1102,7 +1099,7 @@ function LoginPage({
   };
 
   return (
-    <div className="min-h-[calc(100vh-80px)] flex items-center justify-center px-4 py-12 bg-slate-50">
+    <div className="min-h-screen flex items-center justify-center px-4 py-12 bg-slate-50">
       <div className="bg-white w-full max-w-md rounded-3xl shadow-xl border border-slate-200 p-8">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-extrabold text-slate-900 mb-2">
@@ -1226,6 +1223,7 @@ function LoginPage({
 
 
 function StudentDashboard({
+  onLogout,
   currentUser,
   users,
   projects,
@@ -1243,6 +1241,8 @@ function StudentDashboard({
 }) {
   const [activeTab, setActiveTab] = React.useState('cari');
   const [activeChatId, setActiveChatId] = React.useState(null);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
+  const [isChatOpen, setIsChatOpen] = React.useState(false);
 
   const [searchQuery, setSearchQuery] = React.useState('');
   const [bandingInput, setBandingInput] = React.useState({});
@@ -1263,8 +1263,9 @@ function StudentDashboard({
   });
 
   const handleStartChat = (umkmId, projectId) => {
-    setActiveChatId(`chat_${currentUser.id}_${umkmId}`);
-    setActiveTab('pesan');
+    setActiveChatId(`chat_${currentUser.id}_${umkmId}_${projectId}`);
+    setActiveChatContext(projectId);
+    setIsChatOpen(true);
     setSelectedProject(null);
   };
 
@@ -1319,7 +1320,7 @@ function StudentDashboard({
   });
 
   return (
-    <div className="flex flex-col md:flex-row min-h-[calc(100vh-80px)] bg-slate-50 relative">
+    <div className="flex flex-col md:flex-row min-h-screen bg-slate-50 relative">
       {showApplyModal && selectedProject && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -1438,8 +1439,21 @@ function StudentDashboard({
       )}
 
       {/* Sidebar Navigation */}
-      <div className="w-full md:w-64 bg-white border-r border-slate-200 p-6 flex flex-col z-10 sticky top-0 h-auto md:h-[calc(100vh-80px)]">
-        <h2 className="text-sm font-extrabold text-slate-400 uppercase tracking-wider mb-4">Menu</h2>
+      <div className={`fixed inset-y-0 left-0 transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 transition duration-200 ease-in-out md:flex md:w-64 bg-white border-r border-slate-200 p-6 flex-col z-[100] h-[100dvh] md:h-screen w-64 shadow-2xl md:shadow-none`}>
+        <div className="flex justify-between items-center mb-8">
+          <div className="flex items-center">
+            <div className="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center mr-2">
+              <Briefcase size={16} className="text-white" />
+            </div>
+            <span className="text-xl font-extrabold tracking-tight text-slate-900">
+              Gig<span className="text-blue-600">Skill</span>
+            </span>
+          </div>
+          <button onClick={() => setIsMobileMenuOpen(false)} className="md:hidden text-slate-500 hover:bg-slate-100 p-2 rounded-lg">
+            <X size={20} />
+          </button>
+        </div>
+        <h2 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-4">Menu Utama</h2>
         <nav className="space-y-2 flex-1">
           {[
             { id: 'cari', icon: Search, label: 'Cari Project' },
@@ -1448,26 +1462,38 @@ function StudentDashboard({
             { id: 'dompet', icon: CreditCard, label: 'Dompet Saya' },
             { id: 'pesan', icon: MessageCircle, label: 'Pesan' }
           ].map((item) => (
-            <button key={item.id} onClick={() => setActiveTab(item.id)} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all ${activeTab === item.id ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-100'}`}>
+            <button key={item.id} onClick={() => { if(item.id === 'pesan') { setIsChatOpen(true); } else { setActiveTab(item.id); } setIsMobileMenuOpen(false); }} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all ${activeTab === item.id || (item.id === 'pesan' && isChatOpen) ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-100'}`}>
               <item.icon size={18} />
               <span>{item.label}</span>
             </button>
           ))}
         </nav>
+        <div className="pt-6 mt-6 border-t border-slate-200">
+          <button onClick={onLogout} className="w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold text-red-600 hover:bg-red-50 transition-colors">
+            <LogOut size={18} />
+            <span>Keluar Akun</span>
+          </button>
+        </div>
       </div>
+      {isMobileMenuOpen && <div className="fixed inset-0 bg-slate-900/50 z-[90] md:hidden" onClick={() => setIsMobileMenuOpen(false)}></div>}
 
       {/* Main Content */}
       <div className="flex-1 p-6 md:p-10 max-w-5xl mx-auto w-full">
         <div className="mb-8">
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Dashboard Mahasiswa</h1>
+          <div className="flex items-center gap-3">
+            <button className="md:hidden p-2 -ml-2 text-slate-600 rounded-lg hover:bg-slate-100" onClick={() => setIsMobileMenuOpen(true)}>
+              <Menu size={24} />
+            </button>
+            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Dashboard Mahasiswa</h1>
+          </div>
           <div className="flex items-center mt-2 space-x-2">
             <span className="bg-slate-200 text-slate-700 text-xs font-bold px-2.5 py-1 rounded-md uppercase">{currentUser.univ || 'Universitas'}</span>
-            <span className="flex items-center text-xs font-bold text-green-700 bg-green-100 px-2.5 py-1 rounded-md"><CheckCircle2 size={14} className="mr-1" /> Terverifikasi</span>
+            {currentUser.verified ? <span className="flex items-center text-xs font-bold text-green-700 bg-green-100 px-2.5 py-1 rounded-md"><CheckCircle2 size={14} className="mr-1" /> Terverifikasi</span> : <span className="flex items-center text-xs font-bold text-amber-700 bg-amber-100 px-2.5 py-1 rounded-md">Menunggu Verifikasi</span>}
           </div>
         </div>
 
         {activeTab === 'dompet' && <DompetView role="student" currentUser={currentUser} onRequestTransaction={onRequestTransaction} transactions={transactions} />}
-        {activeTab === 'pesan' && <ChatView currentUser={currentUser} users={users} role="student" messages={messages} setMessages={setMessages} initialActiveChat={activeChatId} activeChatContext={activeChatContext} setActiveChatContext={setActiveChatContext} projects={projects} />}
+        <ChatView currentUser={currentUser} users={users} role="student" messages={messages} setMessages={setMessages} initialActiveChat={activeChatId} activeChatContext={activeChatContext} setActiveChatContext={setActiveChatContext} projects={projects} isChatOpen={isChatOpen || activeTab === 'pesan'} onClose={() => { setIsChatOpen(false); if(activeTab === 'pesan') setActiveTab('cari'); }} />
 
         {activeTab === 'cari' && (
           <div className="space-y-6">
@@ -1640,7 +1666,7 @@ function StudentDashboard({
                 </div>
                 <div>
                   <h2 className="text-2xl font-extrabold text-slate-900">{currentUser.name}</h2>
-                  <p className="text-slate-500 font-medium">{currentUser.univ} • Semester {currentUser.semester || '?'}</p>
+                  <p className="text-slate-500 font-medium">{currentUser.univ} â€¢ Semester {currentUser.semester || '?'}</p>
                   <div className="flex items-center mt-2 text-amber-500">
                     <span className="font-bold mr-1">{currentUser.rating || '0.0'}</span>
                     <span className="text-slate-400 text-sm font-medium">/ 5.0 (Rating)</span>
@@ -1696,6 +1722,7 @@ function StudentDashboard({
 
 
 function UMKMDashboard({
+  onLogout,
   currentUser,
   users,
   projects,
@@ -1714,6 +1741,8 @@ function UMKMDashboard({
   const [activeTab, setActiveTab] = React.useState('project');
   const [activeChatId, setActiveChatId] = React.useState(null);
   const [rejectForm, setRejectForm] = React.useState(null);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
+  const [isChatOpen, setIsChatOpen] = React.useState(false);
   const [rejectReason, setRejectReason] = React.useState('');
   
   const [isCustomCategory, setIsCustomCategory] = React.useState(false);
@@ -1730,8 +1759,9 @@ function UMKMDashboard({
   });
 
   const handleStartChat = (studentId, projectId) => {
-    setActiveChatId(`chat_${studentId}_${currentUser.id}`);
-    setActiveTab('pesan');
+    setActiveChatId(`chat_${studentId}_${currentUser.id}_${projectId}`);
+    setActiveChatContext(projectId);
+    setIsChatOpen(true);
     if (onStartChat) onStartChat(studentId, projectId);
   };
 
@@ -1755,7 +1785,7 @@ function UMKMDashboard({
   );
 
   return (
-    <div className="flex flex-col md:flex-row min-h-[calc(100vh-80px)] bg-slate-50">
+    <div className="flex flex-col md:flex-row min-h-screen bg-slate-50">
       
       {showEditProfile && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
@@ -1802,7 +1832,7 @@ function UMKMDashboard({
               </div>
               <div>
                 <h3 className="text-xl font-extrabold text-slate-900">{showStudentProfile.name}</h3>
-                <p className="text-slate-500 text-sm">{showStudentProfile.univ} • Semester {showStudentProfile.semester}</p>
+                <p className="text-slate-500 text-sm">{showStudentProfile.univ} â€¢ Semester {showStudentProfile.semester}</p>
               </div>
             </div>
             <div className="space-y-4">
@@ -1831,8 +1861,21 @@ function UMKMDashboard({
       )}
 
       {/* Sidebar Navigation */}
-      <div className="w-full md:w-64 bg-white border-r border-slate-200 p-6 flex flex-col z-10 sticky top-0 h-auto md:h-[calc(100vh-80px)]">
-        <h2 className="text-sm font-extrabold text-slate-400 uppercase tracking-wider mb-4">Menu UMKM</h2>
+      <div className={`fixed inset-y-0 left-0 transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 transition duration-200 ease-in-out md:flex md:w-64 bg-white border-r border-slate-200 p-6 flex-col z-[100] h-[100dvh] md:h-screen w-64 shadow-2xl md:shadow-none`}>
+        <div className="flex justify-between items-center mb-8">
+          <div className="flex items-center">
+            <div className="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center mr-2">
+              <Briefcase size={16} className="text-white" />
+            </div>
+            <span className="text-xl font-extrabold tracking-tight text-slate-900">
+              Gig<span className="text-blue-600">Skill</span>
+            </span>
+          </div>
+          <button onClick={() => setIsMobileMenuOpen(false)} className="md:hidden text-slate-500 hover:bg-slate-100 p-2 rounded-lg">
+            <X size={20} />
+          </button>
+        </div>
+        <h2 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-4">Menu Utama</h2>
         <nav className="space-y-2 flex-1">
           {[
             { id: 'project', icon: Briefcase, label: 'Project Saya' },
@@ -1841,25 +1884,37 @@ function UMKMDashboard({
             { id: 'dompet', icon: CreditCard, label: 'Dompet Saya' },
             { id: 'pesan', icon: MessageCircle, label: 'Pesan' }
           ].map((item) => (
-            <button key={item.id} onClick={() => setActiveTab(item.id)} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all ${activeTab === item.id ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-100'}`}>
+            <button key={item.id} onClick={() => { if(item.id === 'pesan') { setIsChatOpen(true); } else { setActiveTab(item.id); } setIsMobileMenuOpen(false); }} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all ${activeTab === item.id || (item.id === 'pesan' && isChatOpen) ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-100'}`}>
               <item.icon size={18} />
               <span>{item.label}</span>
             </button>
           ))}
         </nav>
+        <div className="pt-6 mt-6 border-t border-slate-200">
+          <button onClick={onLogout} className="w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold text-red-600 hover:bg-red-50 transition-colors">
+            <LogOut size={18} />
+            <span>Keluar Akun</span>
+          </button>
+        </div>
       </div>
+      {isMobileMenuOpen && <div className="fixed inset-0 bg-slate-900/50 z-[90] md:hidden" onClick={() => setIsMobileMenuOpen(false)}></div>}
 
       {/* Main Content */}
       <div className="flex-1 p-6 md:p-10 max-w-5xl mx-auto w-full">
-        <div className="mb-8 flex justify-between items-end">
+        <div className="mb-8 flex justify-between items-start md:items-end">
           <div>
-            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Dashboard UMKM</h1>
+            <div className="flex items-center gap-3">
+              <button className="md:hidden p-2 -ml-2 text-slate-600 rounded-lg hover:bg-slate-100" onClick={() => setIsMobileMenuOpen(true)}>
+                <Menu size={24} />
+              </button>
+              <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Dashboard UMKM</h1>
+            </div>
             <p className="text-slate-500 mt-1 font-medium">Kelola project dan pelamar Anda</p>
           </div>
         </div>
 
         {activeTab === 'dompet' && <DompetView role="umkm" currentUser={currentUser} onRequestTransaction={onRequestTransaction} transactions={transactions} />}
-        {activeTab === 'pesan' && <ChatView currentUser={currentUser} users={users} role="umkm" messages={messages} setMessages={setMessages} initialActiveChat={activeChatId} activeChatContext={activeChatContext} setActiveChatContext={setActiveChatContext} projects={projects} />}
+        <ChatView currentUser={currentUser} users={users} role="umkm" messages={messages} setMessages={setMessages} initialActiveChat={activeChatId} activeChatContext={activeChatContext} setActiveChatContext={setActiveChatContext} projects={projects} isChatOpen={isChatOpen || activeTab === 'pesan'} onClose={() => { setIsChatOpen(false); if(activeTab === 'pesan') setActiveTab('project'); }} />
 
         {activeTab === 'project' && (
           <div className="space-y-6">
@@ -1876,8 +1931,20 @@ function UMKMDashboard({
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
                       <div>
                         <div className="flex items-center space-x-3 mb-2">
-                          <span className={`text-[10px] px-2 py-1 rounded-md font-bold uppercase tracking-widest border ${project.status === 'open' ? 'bg-amber-100 text-amber-700 border-amber-200' : project.status === 'Selesai' ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-green-100 text-green-700 border-green-200'}`}>
-                            {project.status === 'open' ? 'Mencari Pelamar' : project.status === 'Selesai' ? 'Project Selesai' : 'Mahasiswa Terpilih'}
+                          <span className={`text-[10px] px-2 py-1 rounded-md font-bold uppercase tracking-widest border ${
+                            project.status === 'open' ? 'bg-amber-100 text-amber-700 border-amber-200' : 
+                            project.status === 'Selesai' ? 'bg-blue-100 text-blue-700 border-blue-200' : 
+                            project.status === 'Menunggu Review' ? 'bg-purple-100 text-purple-700 border-purple-200' :
+                            project.status === 'Menunggu Banding' ? 'bg-red-100 text-red-700 border-red-200' :
+                            project.status === 'Banding Berlangsung' ? 'bg-orange-100 text-orange-700 border-orange-200' :
+                            'bg-green-100 text-green-700 border-green-200'
+                          }`}>
+                            {project.status === 'open' ? 'Mencari Pelamar' : 
+                             project.status === 'Selesai' ? 'Project Selesai' : 
+                             project.status === 'Menunggu Review' ? 'Menunggu Review' :
+                             project.status === 'Menunggu Banding' ? 'Menunggu Banding' :
+                             project.status === 'Banding Berlangsung' ? 'Banding Berlangsung' :
+                             'Mahasiswa Terpilih'}
                           </span>
                         </div>
                         <h3 className="text-xl font-extrabold text-slate-900">{project.title}</h3>
@@ -1888,6 +1955,67 @@ function UMKMDashboard({
                       </div>
                     </div>
                     
+                    {(project.status === 'Menunggu Review' || project.status === 'Menunggu Banding' || project.status === 'Banding Berlangsung' || project.status === 'Selesai' || project.status === 'Mahasiswa Terpilih') && (() => {
+                      const acceptedApplicant = project.applicants.find(a => a.status === 'Diterima');
+                      if (!acceptedApplicant) return null;
+                      return (
+                        <div className="mt-4 mb-4 bg-slate-50 border border-slate-200 p-4 rounded-xl">
+                          <p className="text-sm font-bold text-slate-700 mb-2">Status Pekerjaan: <span className="text-blue-600 capitalize">{project.status}</span></p>
+                          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <div className="flex items-center gap-2 mb-3 md:mb-0">
+                              <div className="w-8 h-8 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold text-xs">{acceptedApplicant.studentName.charAt(0)}</div>
+                              <div>
+                                <span className="text-sm font-bold block">{acceptedApplicant.studentName}</span>
+                                <span className="text-[10px] text-slate-500 block">Mahasiswa Terpilih</span>
+                              </div>
+                            </div>
+                            
+                            {project.status === 'Menunggu Review' && (
+                              <div className="flex gap-2">
+                                <button onClick={() => { setRejectForm(project.id); setRejectReason(''); }} className="bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 px-4 py-2 rounded-lg text-xs font-bold transition-colors">Tolak & Banding</button>
+                                <button onClick={() => onReviewProject(project.id, true)} className="bg-green-600 text-white hover:bg-green-700 px-4 py-2 rounded-lg text-xs font-bold transition-colors">Terima & Selesai</button>
+                              </div>
+                            )}
+                          </div>
+                          
+                          {rejectForm === project.id && project.status === 'Menunggu Review' && (
+                            <div className="mt-3">
+                              <textarea 
+                                className="w-full text-sm p-2 rounded-lg border border-red-200 focus:outline-none focus:ring-1 focus:ring-red-500 mb-2" 
+                                placeholder="Alasan penolakan / perbaikan yang diperlukan..."
+                                rows="2"
+                                value={rejectReason}
+                                onChange={e => setRejectReason(e.target.value)}
+                              ></textarea>
+                              <div className="flex justify-end gap-2">
+                                <button onClick={() => setRejectForm(null)} className="text-xs text-slate-500 hover:underline">Batal</button>
+                                <button 
+                                  onClick={() => { onReviewProject(project.id, false, rejectReason); setRejectForm(null); }}
+                                  disabled={!rejectReason.trim()}
+                                  className="bg-red-600 text-white px-4 py-1.5 rounded-lg text-xs font-bold disabled:opacity-50"
+                                >Kirim Banding</button>
+                              </div>
+                            </div>
+                          )}
+
+                          {project.status === 'Menunggu Banding' && project.banding && (
+                             <div className="mt-3 bg-red-50 border border-red-100 p-3 rounded-lg text-xs text-red-700">
+                               <p className="font-bold">Menunggu Respon Mahasiswa</p>
+                               <p className="italic mt-1">Alasan Anda: "{project.banding.reason}"</p>
+                             </div>
+                          )}
+
+                          {project.status === 'Banding Berlangsung' && project.banding && (
+                             <div className="mt-3 bg-purple-50 border border-purple-100 p-3 rounded-lg text-xs text-purple-700">
+                               <p className="font-bold">Banding Sedang Diproses</p>
+                               <p className="italic mt-1">Mahasiswa menjawab: "{project.banding.studentResponse}"</p>
+                               <p className="mt-1 text-[10px]">Tim Admin GigSkill sedang meninjau kasus ini.</p>
+                             </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
                     <button onClick={() => setExpandedProject(expandedProject === project.id ? null : project.id)} className="text-blue-600 text-sm font-bold flex items-center hover:underline">
                       {expandedProject === project.id ? 'Sembunyikan Pelamar' : 'Lihat Daftar Pelamar'}
                       <ChevronDown size={16} className={`ml-1 transition-transform ${expandedProject === project.id ? 'rotate-180' : ''}`} />
@@ -1917,7 +2045,7 @@ function UMKMDashboard({
                                             </span>
                                           )}
                                         </div>
-                                        <p className="text-xs text-slate-500">{studentInfo?.univ} • Melamar pada {applicant.date}</p>
+                                        <p className="text-xs text-slate-500">{studentInfo?.univ} â€¢ Melamar pada {applicant.date}</p>
                                       </div>
                                     </div>
                                     <button onClick={() => setShowStudentProfile(studentInfo)} className="text-xs font-bold text-blue-600 hover:underline">Lihat Profil Lengkap</button>
@@ -2049,7 +2177,7 @@ function UMKMDashboard({
                   <h2 className="text-2xl font-extrabold text-slate-900">{currentUser.name}</h2>
                   <p className="text-slate-500 font-medium">{currentUser.category || 'Kategori Usaha'}</p>
                   <div className="flex items-center mt-2 space-x-3">
-                    <span className="flex items-center text-xs font-bold text-green-700 bg-green-100 px-2.5 py-1 rounded-md"><CheckCircle2 size={14} className="mr-1" /> Terverifikasi</span>
+                    {currentUser.verified ? <span className="flex items-center text-xs font-bold text-green-700 bg-green-100 px-2.5 py-1 rounded-md"><CheckCircle2 size={14} className="mr-1" /> Terverifikasi</span> : <span className="flex items-center text-xs font-bold text-amber-700 bg-amber-100 px-2.5 py-1 rounded-md">Menunggu Verifikasi</span>}
                     <span className="text-xs font-bold text-slate-500 flex items-center"><Briefcase size={14} className="mr-1"/> {myProjects.length} Project</span>
                   </div>
                 </div>
@@ -2228,7 +2356,9 @@ function DompetView({ role, currentUser, onRequestTransaction, transactions }) {
   );
 }
 
-function AdminDashboard({ showToast, users, setUsers, projects, setProjects, transactions, setTransactions }) {
+function AdminDashboard({
+  onLogout,
+  showToast, users, setUsers, projects, setProjects, transactions, setTransactions }) {
   const [activeTab, setActiveTab] = React.useState('verifikasi');
 
   const pendingStudents = users.filter(u => u.role === 'student' && !u.verified);
@@ -2248,7 +2378,7 @@ function AdminDashboard({ showToast, users, setUsers, projects, setProjects, tra
 
   const handleVerifyTransaction = (txId, isApproved) => {
     const tx = transactions.find(t => t.id === txId);
-    if (!tx) return;
+    if (!tx || tx.status !== 'Menunggu') return;
     
     setTransactions(prev => prev.map(t => {
       if (t.id === txId) return { ...t, status: isApproved ? 'Disetujui' : 'Ditolak' };
@@ -2270,8 +2400,8 @@ function AdminDashboard({ showToast, users, setUsers, projects, setProjects, tra
   const handleMediation = (projectId, winner) => {
     setProjects(prev => prev.map(p => {
       if (p.id === projectId) {
-        if (winner === 'student') {
-          // Add balance to student
+        let paymentStatus = p.paymentStatus;
+        if (winner === 'student' && p.paymentStatus !== 'Sudah Dibayar') {
           setUsers(usersList => usersList.map(u => {
             if (p.applicants.some(a => a.status === 'Diterima' && a.studentId === u.id)) {
               return { ...u, balance: (u.balance || 0) + Number(p.budget) };
@@ -2281,10 +2411,12 @@ function AdminDashboard({ showToast, users, setUsers, projects, setProjects, tra
             }
             return u;
           }));
+          paymentStatus = 'Sudah Dibayar';
         }
         return { 
           ...p, 
-          status: 'Selesai',
+          status: winner === 'student' ? 'Selesai' : 'Sengketa Selesai',
+          paymentStatus,
           banding: {
             ...p.banding,
             status: winner === 'student' ? 'Dimenangkan Mahasiswa' : 'Dimenangkan UMKM'
@@ -2299,9 +2431,15 @@ function AdminDashboard({ showToast, users, setUsers, projects, setProjects, tra
   return (
     <div className="flex-1 bg-slate-50 p-6 md:p-10 min-h-screen">
       <div className="max-w-7xl mx-auto space-y-6">
-        <div className="flex items-center gap-3 mb-8">
-          <ShieldCheck size={32} className="text-blue-600" />
-          <h2 className="text-2xl font-extrabold text-slate-900">Admin GigSkill Dashboard</h2>
+        <div className="flex justify-between items-center mb-8">
+          <div className="flex items-center gap-3">
+            <ShieldCheck size={32} className="text-blue-600" />
+            <h2 className="text-2xl font-extrabold text-slate-900">Admin GigSkill Dashboard</h2>
+          </div>
+          <button onClick={onLogout} className="flex items-center space-x-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-red-600 hover:bg-red-50 transition-colors">
+            <LogOut size={18} />
+            <span className="hidden md:inline">Keluar Akun</span>
+          </button>
         </div>
 
         <div className="flex gap-2 overflow-x-auto pb-4 hide-scrollbar">
@@ -2373,12 +2511,20 @@ function AdminDashboard({ showToast, users, setUsers, projects, setProjects, tra
         {activeTab === 'moderasi' && (
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
             <h3 className="text-lg font-extrabold text-slate-900 mb-4">Mediasi Banding Sengketa</h3>
-            {bandingProjects.length === 0 ? <p className="text-sm text-slate-500">Tidak ada kasus banding.</p> : bandingProjects.map(p => (
+            {bandingProjects.length === 0 ? <p className="text-sm text-slate-500">Tidak ada kasus banding.</p> : bandingProjects.map(p => {
+              const submittedAt = p.banding?.bandingSubmittedAt || 0;
+              const deadline = submittedAt + (2 * 24 * 60 * 60 * 1000);
+              const now = Date.now();
+              const isExpired = now >= deadline;
+              const remainingHours = Math.max(0, Math.floor((deadline - now) / (1000 * 60 * 60)));
+              
+              return (
               <div key={p.id} className="p-4 border border-purple-200 rounded-2xl mb-4">
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <h4 className="font-extrabold text-slate-900">{p.title}</h4>
                     <p className="text-xs text-slate-500">UMKM: {p.umkmName} | Mahasiswa: {p.applicants.find(a=>a.status === 'Diterima')?.studentName}</p>
+                    <p className="text-xs font-bold mt-1 text-purple-700">Status: {isExpired ? 'Mediasi Admin Terbuka' : `Diskusi Banding (Sisa ${remainingHours} jam)`}</p>
                   </div>
                   <p className="font-bold text-green-700">Rp {Number(p.budget).toLocaleString('id-ID')}</p>
                 </div>
@@ -2393,11 +2539,17 @@ function AdminDashboard({ showToast, users, setUsers, projects, setProjects, tra
                   </div>
                 </div>
                 <div className="flex justify-end gap-2">
-                   <button onClick={() => handleMediation(p.id, 'umkm')} className="text-xs font-bold bg-white text-slate-600 border border-slate-300 px-4 py-2 rounded-lg hover:bg-slate-100">Menangkan UMKM (Dana Kembali)</button>
-                   <button onClick={() => handleMediation(p.id, 'student')} className="text-xs font-bold bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">Menangkan Mahasiswa (Teruskan Pembayaran)</button>
+                   {!isExpired ? (
+                     <p className="text-xs text-slate-500 italic">Admin dapat melakukan mediasi setelah 2 hari jika belum ada kesepakatan.</p>
+                   ) : (
+                     <>
+                       <button onClick={() => handleMediation(p.id, 'umkm')} className="text-xs font-bold bg-white text-slate-600 border border-slate-300 px-4 py-2 rounded-lg hover:bg-slate-100">Menangkan UMKM (Dana Kembali)</button>
+                       <button onClick={() => handleMediation(p.id, 'student')} className="text-xs font-bold bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">Menangkan Mahasiswa (Teruskan Pembayaran)</button>
+                     </>
+                   )}
                 </div>
               </div>
-            ))}
+            )})}
           </div>
         )}
       </div>
@@ -2405,144 +2557,227 @@ function AdminDashboard({ showToast, users, setUsers, projects, setProjects, tra
   );
 }
 
-function ChatView({ currentUser, users, role, messages, setMessages, initialActiveChat, activeChatContext, projects, setActiveChatContext }) {
+function ChatView({ currentUser, users, role, messages, setMessages, initialActiveChat, activeChatContext, projects, setActiveChatContext, isChatOpen, onClose }) {
   const [activeChat, setActiveChat] = React.useState(initialActiveChat);
   const [messageText, setMessageText] = React.useState('');
+  const [isFullscreen, setIsFullscreen] = React.useState(false);
 
-  const chatPartners = users.filter(u => u.id !== currentUser.id && (role === 'admin' || (role === 'student' && u.role === 'umkm') || (role === 'umkm' && u.role === 'student')));
+  React.useEffect(() => {
+    if (initialActiveChat) {
+      setActiveChat(initialActiveChat);
+    }
+  }, [initialActiveChat]);
 
-  const handleSendMessage = (e) => {
-    e.preventDefault();
-    if (!messageText.trim() || !activeChat) return;
-    const newMsg = {
-      id: 'm_' + Date.now(),
-      chatId: activeChat,
-      senderId: currentUser.id,
-      text: messageText,
-      timestamp: new Date().toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'})
-    };
-    setMessages(prev => [...prev, newMsg]);
-    setMessageText('');
-  };
+  if (!isChatOpen) return null;
 
   const getPartnerId = (chatId) => {
     if (!chatId) return null;
     const parts = chatId.split('_');
     return parts[1] === currentUser.id ? parts[2] : parts[1];
   };
+
+  const getProjectId = (chatId) => {
+    if (!chatId) return null;
+    const parts = chatId.split('_');
+    return parts[3] || null;
+  };
+
+  const handleSendMessage = (e) => {
+    e.preventDefault();
+    if (!messageText.trim() || !activeChat) return;
+    const projectId = getProjectId(activeChat);
+    const newMsg = {
+      id: 'm_' + Date.now(),
+      chatId: activeChat,
+      senderId: currentUser.id,
+      text: messageText,
+      timestamp: new Date().toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'}),
+      projectId: projectId || undefined
+    };
+    setMessages(prev => [...prev, newMsg]);
+    setMessageText('');
+  };
+
   const activePartner = activeChat ? users.find(u => u.id === getPartnerId(activeChat)) : null;
-  const activeMessages = messages.filter(m => m.chatId === activeChat);
+  const activeProject = activeChatContext ? projects.find(p => p.id === activeChatContext) : null;
+  
+  // Array of safe messages
+  const safeMessages = Array.isArray(messages) ? messages : [];
+  const activeMessages = safeMessages.filter(m => m.chatId === activeChat);
+
+  // Build distinct chat list based on messages and activeChat
+  const chatIds = new Set();
+  safeMessages.forEach(m => {
+    if (m.chatId && m.chatId.includes(currentUser.id)) {
+      chatIds.add(m.chatId);
+    }
+  });
+  if (activeChat) chatIds.add(activeChat);
+  
+  const chatList = Array.from(chatIds).sort((a, b) => {
+    const msgA = safeMessages.filter(m => m.chatId === a).pop();
+    const msgB = safeMessages.filter(m => m.chatId === b).pop();
+    if (!msgA) return -1;
+    if (!msgB) return 1;
+    return msgB.id.localeCompare(msgA.id);
+  });
 
   return (
-    <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden flex h-[600px]">
-      <div className="w-1/3 border-r border-slate-200 flex flex-col bg-slate-50">
-        <div className="p-4 border-b border-slate-200">
+    <div className={`fixed z-[150] bg-white shadow-2xl transition-all duration-300 overflow-hidden flex flex-col md:flex-row ${
+      isFullscreen 
+        ? 'inset-0 w-full h-[100dvh] rounded-none' 
+        : 'bottom-0 right-0 md:bottom-6 md:right-6 w-full md:w-[420px] h-[75vh] md:h-[600px] md:max-h-[80vh] rounded-t-3xl md:rounded-3xl border-t md:border border-slate-200 shadow-[0_-10px_40px_rgba(0,0,0,0.1)]'
+    }`}>
+      {/* Header for Mobile or Fullscreen */}
+      <div className={`${activeChat ? 'hidden' : 'flex'} md:hidden p-4 border-b border-slate-200 bg-white justify-between items-center shrink-0`}>
+        <h2 className="font-extrabold text-slate-800">Pesan</h2>
+        <div className="flex gap-2">
+           {isFullscreen ? (
+                    <button type="button" onClick={() => setIsFullscreen(false)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg flex items-center gap-1">
+                      <span className="text-sm font-bold hidden md:inline">Kecilkan</span><span className="text-sm font-bold md:hidden">â†“</span>
+                    </button>
+                 ) : (
+                    <button type="button" onClick={() => setIsFullscreen(true)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg">
+                      <span className="text-xs font-bold hidden md:inline">Perbesar</span><span className="text-xs font-bold md:hidden">â¤¢</span>
+                    </button>
+                 )}
+           <button type="button" onClick={onClose} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg"><X size={20}/></button>
+        </div>
+      </div>
+
+      <div className={`${activeChat ? 'hidden md:flex' : 'flex'} w-full md:w-1/3 border-r border-slate-200 flex-col bg-slate-50`}>
+        <div className="hidden md:flex p-4 border-b border-slate-200 bg-white justify-between items-center shrink-0">
           <h2 className="font-extrabold text-slate-800">Pesan</h2>
+          <div className="flex gap-1">
+             {isFullscreen ? (
+                    <button type="button" onClick={() => setIsFullscreen(false)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg flex items-center gap-1">
+                      <span className="text-sm font-bold hidden md:inline">Kecilkan</span><span className="text-sm font-bold md:hidden">â†“</span>
+                    </button>
+                 ) : (
+                    <button type="button" onClick={() => setIsFullscreen(true)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg">
+                      <span className="text-xs font-bold hidden md:inline">Perbesar</span><span className="text-xs font-bold md:hidden">â¤¢</span>
+                    </button>
+                 )}
+             <button type="button" onClick={onClose} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg"><X size={20}/></button>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto">
-          {chatPartners.map(partner => {
-            const studentId = currentUser.role === 'student' ? currentUser.id : partner.id;
-            const umkmId = currentUser.role === 'umkm' ? currentUser.id : partner.id;
-            const chatId = `chat_${studentId}_${umkmId}`;
-            const lastMsg = messages.filter(m => m.chatId === chatId).pop();
+          {chatList.map(chatId => {
+            const partner = users.find(u => u.id === getPartnerId(chatId));
+            if (!partner) return null;
+            const project = projects.find(p => p.id === getProjectId(chatId));
+            const lastMsg = safeMessages.filter(m => m.chatId === chatId).pop();
             return (
-              <div key={partner.id} onClick={() => setActiveChat(chatId)} className={`p-4 border-b border-slate-100 cursor-pointer hover:bg-white transition-colors ${activeChat === chatId ? 'bg-white border-l-4 border-l-blue-600' : ''}`}>
-                <div className="flex justify-between items-center mb-1">
-                  <span className="font-bold text-slate-800 truncate">{partner.name}</span>
-                  {lastMsg && <span className="text-xs text-slate-400">{lastMsg.timestamp}</span>}
+              <div 
+                key={chatId}
+                onClick={() => { setActiveChat(chatId); setActiveChatContext(getProjectId(chatId)); }}
+                className={`p-4 border-b border-slate-100 cursor-pointer transition-colors ${activeChat === chatId ? 'bg-blue-50 border-l-4 border-l-blue-600' : 'hover:bg-slate-100 border-l-4 border-l-transparent'}`}
+              >
+                <div className="flex justify-between items-start mb-1">
+                  <h4 className="font-bold text-slate-900 text-sm truncate">{partner.name}</h4>
+                  {lastMsg && <span className="text-[10px] text-slate-400 shrink-0 ml-2">{lastMsg.timestamp}</span>}
                 </div>
-                <p className="text-sm text-slate-500 truncate">{lastMsg ? lastMsg.text : 'Belum ada pesan'}</p>
+                {project && <p className="text-[10px] font-bold text-blue-600 mb-1 line-clamp-1">{project.title}</p>}
+                <p className="text-xs text-slate-500 line-clamp-1">{lastMsg ? lastMsg.text : 'Mulai percakapan'}</p>
               </div>
             );
           })}
+          {chatList.length === 0 && (
+             <div className="p-6 text-center text-slate-400 text-sm">Belum ada percakapan.</div>
+          )}
         </div>
       </div>
-      <div className="flex-1 flex flex-col">
-        {activeChat ? (
+      
+      <div className={`${!activeChat ? 'hidden md:flex' : 'flex'} w-full md:w-2/3 flex-col bg-slate-50 relative`}>
+        {activeChat && activePartner ? (
           <>
-            <div className="p-4 border-b border-slate-200 bg-white flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 font-bold">
-                  {activePartner?.name.charAt(0)}
-                </div>
+            <div className="p-4 border-b border-slate-200 bg-white flex justify-between items-center shadow-sm z-20 shrink-0">
+              <div className="flex items-center gap-3">
+                <button type="button" className="md:hidden p-2 -ml-2 text-slate-500 hover:bg-slate-100 rounded-lg" onClick={() => setActiveChat(null)}>
+                  <span className="text-sm font-bold">â†</span>
+                </button>
                 <div>
-                  <h3 className="font-bold text-slate-800">{activePartner?.name}</h3>
-                  <p className="text-xs text-slate-500">{activePartner?.role === 'student' ? 'Mahasiswa' : 'UMKM'}</p>
+                  <h3 className="font-extrabold text-slate-900 truncate">{activePartner.name}</h3>
+                  <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">{activePartner.role}</p>
                 </div>
+              </div>
+              <div className="flex gap-1">
+                 {isFullscreen ? (
+                    <button type="button" onClick={() => setIsFullscreen(false)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg flex items-center gap-1">
+                      <span className="text-sm font-bold hidden md:inline">Kecilkan</span><span className="text-sm font-bold md:hidden">â†“</span>
+                    </button>
+                 ) : (
+                    <button type="button" onClick={() => setIsFullscreen(true)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg">
+                      <span className="text-xs font-bold hidden md:inline">Perbesar</span><span className="text-xs font-bold md:hidden">â¤¢</span>
+                    </button>
+                 )}
+                 <button type="button" onClick={onClose} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg"><X size={20}/></button>
               </div>
             </div>
             
-            {activeChatContext && (
-              <div className="bg-blue-50 border-b border-blue-100 p-4 relative">
-                <button onClick={() => setActiveChatContext(null)} className="absolute top-2 right-2 text-blue-400 hover:text-blue-700">
-                  <X size={16} />
-                </button>
-                <div className="flex gap-2">
-                  <div className="text-xs">
-                    {(() => {
-                      const ctxProject = projects.find(p => p.id === activeChatContext);
-                      if (!ctxProject) return null;
-                      const applicant = ctxProject.applicants.find(a => a.studentId === currentUser.id || a.studentId === activePartner?.id);
-                      const status = applicant ? applicant.status : ctxProject.status;
-                      return (
-                        <>
-                          <p className="font-bold text-blue-900 mb-1">📋 Konteks Project</p>
-                          <p className="text-blue-800">{ctxProject.title}</p>
-                          <p className="text-blue-700">{ctxProject.umkmName}</p>
-                          <p className="font-bold text-blue-900 mt-1">Rp {Number(ctxProject.budget).toLocaleString('id-ID')}</p>
-                          <p className="text-blue-600 mt-1">Status: <span className="font-bold">{ctxProject.status === 'Selesai' ? 'Selesai' : status}</span></p>
-                        </>
-                      )
-                    })()}
+            {activeChatContext && activeProject && (
+              <div className="bg-white border-b border-slate-200 p-3 flex justify-between items-center shadow-sm z-10 shrink-0">
+                <div className="truncate pr-4">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Konteks Project</p>
+                  <p className="text-sm font-bold text-blue-700 leading-tight truncate">{activeProject.title}</p>
+                  <div className="flex gap-2 text-[10px] text-slate-600 mt-1 font-bold">
+                    <span>Rp {Number(activeProject.budget).toLocaleString('id-ID')}</span>
+                    <span>â€¢</span>
+                    <span className="capitalize">{activeProject.status}</span>
                   </div>
                 </div>
+                <button type="button" onClick={() => setActiveChatContext(null)} 
+                  className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
+                >
+                  <X size={16} />
+                </button>
               </div>
             )}
             
-            <div className="flex-1 overflow-y-auto p-4 bg-slate-50/50 space-y-4">
-              {activeMessages.map(msg => (
-                <div key={msg.id} className={`flex ${msg.senderId === currentUser.id ? 'justify-end' : 'justify-start'}`}>
-                  {msg.isContext ? (
-                    <div className="bg-amber-50 border border-amber-200 p-3 rounded-2xl max-w-[80%] text-sm text-amber-900 shadow-sm whitespace-pre-wrap">
-                      {msg.text}
-                      <p className="text-[10px] text-amber-700 mt-2 text-right">{msg.timestamp}</p>
-                    </div>
-                  ) : (
-                    <div className={`max-w-[70%] p-3 rounded-2xl shadow-sm text-sm ${msg.senderId === currentUser.id ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-white border border-slate-200 text-slate-800 rounded-tl-none'}`}>
-                      {msg.text}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {activeMessages.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-2">
+                  <MessageCircle size={48} className="text-slate-200" />
+                  <p className="text-sm">Belum ada pesan.</p>
+                </div>
+              ) : (
+                activeMessages.map(msg => (
+                  <div key={msg.id} className={`flex ${msg.senderId === currentUser.id ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[85%] p-3 rounded-2xl shadow-sm text-sm ${msg.senderId === currentUser.id ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-white border border-slate-200 text-slate-800 rounded-tl-none'}`}>
+                      <div className="whitespace-pre-wrap">{msg.text}</div>
                       <p className={`text-[10px] mt-1 text-right ${msg.senderId === currentUser.id ? 'text-blue-200' : 'text-slate-400'}`}>{msg.timestamp}</p>
                     </div>
-                  )}
-                </div>
-              ))}
+                  </div>
+                ))
+              )}
             </div>
-            <div className="p-4 bg-white border-t border-slate-200">
+            <div className="p-3 bg-white border-t border-slate-200 shrink-0">
               <form onSubmit={handleSendMessage} className="flex gap-2">
-                <input
-                  type="text"
+                <input 
+                  type="text" 
                   value={messageText}
                   onChange={(e) => setMessageText(e.target.value)}
-                  placeholder="Tulis pesan..."
-                  className="flex-1 px-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 bg-slate-50"
+                  placeholder="Ketik pesan..." 
+                  className="flex-1 bg-slate-100 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-600 outline-none"
                 />
-                <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold hover:bg-blue-700 transition-colors flex items-center justify-center">
+                <button type="submit" className="bg-blue-600 text-white p-2.5 rounded-xl hover:bg-blue-700 transition-colors">
                   <Send size={18} />
                 </button>
               </form>
             </div>
           </>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
-            <MessageCircle size={48} className="mb-4 text-slate-200" />
-            <p className="font-medium">Pilih pesan untuk mulai mengobrol</p>
+          <div className="flex-1 flex flex-col items-center justify-center text-slate-400 space-y-4">
+            <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center">
+              <MessageCircle size={32} className="text-slate-300" />
+            </div>
+            <p className="text-sm font-medium">Pilih percakapan untuk mulai chat</p>
           </div>
         )}
       </div>
     </div>
   );
 }
-
-
 
 function Footer({ onOpenPopup }) {
   return (
