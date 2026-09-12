@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   Menu,
+  Send,
   X,
   Search,
   Briefcase,
@@ -30,10 +31,18 @@ const initialUsers = [
   {
     id: 'u1',
     role: 'student',
-    name: 'Joko Subianto (demo)',
+    name: 'Joko Subianto',
     email: 'jokosubianto@student.com',
     password: '123',
-    univ: 'unpam'
+    univ: 'Universitas Pamulang',
+    semester: 5,
+    bio: 'Mahasiswa desain grafis yang suka tantangan.',
+    skills: ['Graphic Design', 'Figma', 'Adobe Illustrator'],
+    rating: 4.8,
+    portfolios: [{ title: 'Desain Logo Startup', link: '#' }, { title: 'Redesign UI/UX Web', link: '#' }],
+    balance: 300000,
+    verified: true,
+    ktmUrl: 'mock-ktm.jpg'
   },
   {
     id: 'u2',
@@ -41,7 +50,13 @@ const initialUsers = [
     name: 'Toko Kue Ibu Tin',
     email: 'toko@ibu.com',
     password: '123',
-    phone: '08123456789'
+    phone: '08123456789',
+    category: 'Kuliner',
+    desc: 'Toko kue rumahan yang memproduksi kue kering dan basah.',
+    rating: 4.9,
+    projectCount: 5,
+    balance: 5000000,
+    verified: true
   },
   {
     id: 'u3',
@@ -60,6 +75,8 @@ const initialProjects = [
     title: 'Desain Logo & Banner Toko Kue',
     budget: '150000',
     deadline: '3 Hari',
+    category: 'Desain',
+    status: 'open',
     desc: 'Kami membutuhkan desain logo baru yang minimalis dan banner untuk ditaruh di depan toko fisik kami.',
     tags: ['Graphic Design', 'Illustrator'],
     verified: true,
@@ -67,11 +84,13 @@ const initialProjects = [
   },
   {
     id: 'p2',
-    umkmId: 'dummy',
-    umkmName: "Hijab Syar'i Butik",
+    umkmId: 'u2',
+    umkmName: 'Toko Kue Ibu Tin',
     title: 'Admin Instagram untuk 1 Minggu',
     budget: '250000',
     deadline: '7 Hari',
+    category: 'Pemasaran',
+    status: 'open',
     desc: 'Tugas meliputi upload feed 1x sehari, membalas DM/Komen, dan buat 3 reels sederhana.',
     tags: ['Social Media', 'Copywriting'],
     verified: true,
@@ -88,16 +107,39 @@ const initialMessages = {
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState('landing');
-  const [users, setUsers] = useState(initialUsers);
-  const [projects, setProjects] = useState(initialProjects);
+  const [users, setUsers] = React.useState(() => {
+    const saved = localStorage.getItem('gigskill_users');
+    return saved ? JSON.parse(saved) : initialUsers;
+  });
+  const [projects, setProjects] = React.useState(() => {
+    const saved = localStorage.getItem('gigskill_projects');
+    return saved ? JSON.parse(saved) : initialProjects;
+  });
   const [messages, setMessages] = React.useState(() => {
     const saved = localStorage.getItem('gigskill_messages');
     return saved ? JSON.parse(saved) : initialMessages;
   });
+  const [transactions, setTransactions] = React.useState(() => {
+    const saved = localStorage.getItem('gigskill_transactions');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [footerPopup, setFooterPopup] = React.useState(null);
+  const [activeChatContext, setActiveChatContext] = React.useState(null);
+
+  React.useEffect(() => {
+    localStorage.setItem('gigskill_users', JSON.stringify(users));
+  }, [users]);
+
+  React.useEffect(() => {
+    localStorage.setItem('gigskill_projects', JSON.stringify(projects));
+  }, [projects]);
 
   React.useEffect(() => {
     localStorage.setItem('gigskill_messages', JSON.stringify(messages));
   }, [messages]);
+  React.useEffect(() => {
+    localStorage.setItem('gigskill_transactions', JSON.stringify(transactions));
+  }, [transactions]);
   const [currentUser, setCurrentUser] = useState(null);
   const [toast, setToast] = useState({
     show: false,
@@ -111,19 +153,52 @@ export default function App() {
   };
 
   const showToast = (message, type = 'success') => {
-    setToast({
-      show: true,
-      message,
-      type
-    });
-
+    setToast({ show: true, message, type, exiting: false });
     setTimeout(() => {
-      setToast({
-        show: false,
-        message: '',
-        type: 'success'
-      });
+      setToast(prev => prev.show ? { ...prev, exiting: true } : prev);
+      setTimeout(() => setToast({ show: false, message: '', type: '', exiting: false }), 300);
     }, 3000);
+  };
+  
+  const hideToast = () => {
+    setToast(prev => ({ ...prev, exiting: true }));
+    setTimeout(() => setToast({ show: false, message: '', type: '', exiting: false }), 300);
+  };
+
+  
+  const onStartChat = (partnerId, projectId) => {
+    if (projectId) {
+      setActiveChatContext(projectId);
+      const studentId = currentUser.role === 'student' ? currentUser.id : partnerId;
+      const umkmId = currentUser.role === 'umkm' ? currentUser.id : partnerId;
+      const chatId = `chat_${studentId}_${umkmId}`;
+      
+      setMessages(prev => {
+        const hasContext = prev.some(m => m.chatId === chatId && m.isContext && m.projectId === projectId);
+        if (!hasContext) {
+          const project = projects.find(p => p.id === projectId);
+          const applicant = project?.applicants.find(a => a.studentId === studentId);
+          const status = applicant ? applicant.status : project?.status;
+          
+          if (project) {
+            const studentInfo = applicant ? `\nMahasiswa: ${applicant.studentName}` : '';
+            const contextMsg = {
+              id: 'm_' + Date.now(),
+              chatId,
+              senderId: 'system',
+              text: `📋 KONTEKS PROJECT\nProject: ${project.title}\nUMKM: ${project.umkmName}${studentInfo}\nBudget: Rp ${Number(project.budget).toLocaleString('id-ID')}\nStatus: ${project.status === 'Selesai' ? 'Selesai' : status}`,
+              timestamp: new Date().toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'}),
+              isContext: true,
+              projectId
+            };
+            return [...prev, contextMsg];
+          }
+        }
+        return prev;
+      });
+    } else {
+      setActiveChatContext(null);
+    }
   };
 
   const handleRegister = (userData) => {
@@ -131,7 +206,8 @@ export default function App() {
 
     const newUser = {
       ...userData,
-      id: newId
+      id: newId,
+      ...(userData.role === 'student' ? { skills: [], portfolios: [] } : {})
     };
 
     setUsers([...users, newUser]);
@@ -189,13 +265,13 @@ export default function App() {
 
   const handlePostProject = (projectData) => {
     const newProject = {
-      ...projectData,
       id: 'p_' + Date.now(),
       umkmId: currentUser.id,
       umkmName: currentUser.name,
       verified: true,
-      tags: ['New'],
-      applicants: []
+      applicants: [],
+      ...projectData,
+      tags: projectData.tags || ['New']
     };
 
     setProjects([newProject, ...projects]);
@@ -203,58 +279,144 @@ export default function App() {
     showToast('Project berhasil diposting!', 'success');
   };
 
-  const handleApplyProject = (projectId) => {
-    const project = projects.find((p) => p.id === projectId);
+    const handleUpdateProfile = (userId, newProfileData) => {
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, ...newProfileData } : u));
+    setCurrentUser(prev => ({ ...prev, ...newProfileData }));
+    showToast('Profil berhasil diperbarui!');
+  };
 
-    if (!project) {
-      return;
-    }
-
-    if (
-      project.applicants.find(
-        (a) => a.studentId === currentUser.id
-      )
-    ) {
-      showToast(
-        'Anda sudah melamar project ini sebelumnya.',
-        'error'
-      );
-      return;
-    }
-
-    const updatedProjects = projects.map((p) => {
+  const handleUpdateApplicantStatus = (projectId, studentId, status) => {
+    setProjects(prev => prev.map(p => {
       if (p.id === projectId) {
         return {
           ...p,
-          applicants: [
-            ...p.applicants,
-            {
-              studentId: currentUser.id,
-              studentName: currentUser.name,
-              date: new Date().toLocaleDateString('id-ID')
-            }
-          ]
+          status: status === 'Diterima' ? 'Mahasiswa Terpilih' : p.status,
+          applicants: p.applicants.map(a => a.studentId === studentId ? { ...a, status } : a)
         };
       }
-
       return p;
-    });
+    }));
+    showToast(`Pelamar ${status === 'Diterima' ? 'berhasil diterima' : 'ditolak'}.`, status === 'Diterima' ? 'success' : 'error');
+  };
 
-    setProjects(updatedProjects);
+  
+    const handleRequestTransaction = (type, amount, accountDetails) => {
+    const newTx = {
+      id: 'tx_' + Date.now(),
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      type, // 'topup' or 'withdraw'
+      amount: Number(amount),
+      accountDetails,
+      status: 'Menunggu',
+      date: new Date().toLocaleDateString('id-ID')
+    };
+    setTransactions(prev => [newTx, ...prev]);
+    showToast(`Permintaan ${type === 'topup' ? 'Top Up' : 'Withdraw'} berhasil dikirim ke Admin.`);
+  };
 
-    showToast(
-      'Berhasil melamar project! Menunggu persetujuan UMKM.',
-      'success'
+  const handleReviewProject = (projectId, isAccepted, reason = '') => {
+    setProjects(prev => prev.map(p => {
+      if (p.id === projectId && p.status === 'Menunggu Review') {
+        if (isAccepted) {
+          // Transfer balance
+          setUsers(usersList => usersList.map(u => {
+            if (u.id === p.umkmId) return { ...u, balance: (u.balance || 0) - Number(p.budget) };
+            if (p.applicants.some(a => a.status === 'Diterima' && a.studentId === u.id)) {
+               return { ...u, balance: (u.balance || 0) + Number(p.budget) };
+            }
+            return u;
+          }));
+          return { ...p, status: 'Selesai' };
+        } else {
+          return { 
+            ...p, 
+            status: 'Menunggu Banding',
+            banding: {
+              reason,
+              studentResponse: '',
+              status: 'Menunggu Banding',
+              date: null
+            }
+          };
+        }
+      }
+      return p;
+    }));
+    showToast(isAccepted ? 'Project diselesaikan & Saldo ditransfer!' : 'Project dikembalikan untuk Banding.');
+  };
+
+  const handleSubmitBanding = (projectId, studentResponse) => {
+    setProjects(prev => prev.map(p => {
+      if (p.id === projectId && p.banding) {
+        return {
+          ...p,
+          status: 'Banding Berlangsung',
+          banding: {
+            ...p.banding,
+            studentResponse,
+            status: 'Banding Berlangsung',
+            date: new Date().toISOString()
+          }
+        };
+      }
+      return p;
+    }));
+    showToast('Banding berhasil dikirim! Menunggu admin.');
+  };
+
+  const handleCompleteProject = (projectId) => {
+    setProjects(prev => prev.map(p => {
+      if (p.id === projectId && p.status === 'Mahasiswa Terpilih') {
+        return { ...p, status: 'Menunggu Review' };
+      }
+      return p;
+    }));
+    showToast('Pekerjaan dikirim! Menunggu review UMKM.', 'success');
+  };
+
+  const handleApplyProject = (projectId, proposal) => {
+    if (currentUser?.role !== 'student') return;
+
+    setProjects((prev) =>
+      prev.map((p) => {
+        if (p.id === projectId) {
+          const isApplied = p.applicants.some(a => a.studentId === currentUser.id);
+          if (isApplied) {
+            showToast('Anda sudah melamar project ini sebelumnya.', 'error');
+            return p;
+          }
+
+          return {
+            ...p,
+            applicants: [
+              ...p.applicants,
+              {
+                studentId: currentUser.id,
+                studentName: currentUser.name,
+                proposal: proposal.trim() ? proposal : 'Halo, saya berminat untuk melamar project ini.',
+                date: new Date().toLocaleDateString('id-ID'),
+                status: 'Menunggu'
+              }
+            ]
+          };
+        }
+        return p;
+      })
     );
+    showToast('Lamaran berhasil dikirim!', 'success');
   };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
       {toast.show && (
-        <div className="fixed top-5 right-5 z-[200]">
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[200]">
           <div
+            onClick={hideToast}
             className={
-              'flex items-center space-x-2 px-6 py-3 rounded-full shadow-lg border ' +
+              'cursor-pointer flex items-center space-x-2 px-6 py-3 rounded-full shadow-lg border transition-all duration-300 transform ' +
+              (toast.exiting ? 'opacity-0 -translate-y-4' : 'opacity-100 translate-y-0') + ' ' +
               (toast.type === 'success'
                 ? 'bg-green-50 border-green-200 text-green-700'
                 : 'bg-red-50 border-red-200 text-red-700')
@@ -308,6 +470,14 @@ export default function App() {
               onApply={handleApplyProject}
               messages={messages}
               setMessages={setMessages}
+              onUpdateProfile={handleUpdateProfile}
+              onCompleteProject={handleCompleteProject}
+              onStartChat={onStartChat}
+              onSubmitBanding={handleSubmitBanding}
+              activeChatContext={activeChatContext}
+              setActiveChatContext={setActiveChatContext}
+              transactions={transactions}
+              onRequestTransaction={handleRequestTransaction}
             />
           )}
 
@@ -318,18 +488,59 @@ export default function App() {
               users={users}
               projects={projects}
               onPostProject={handlePostProject}
+              onUpdateApplicantStatus={handleUpdateApplicantStatus}
               messages={messages}
               setMessages={setMessages}
+              onUpdateProfile={handleUpdateProfile}
+              onStartChat={onStartChat}
+              onReviewProject={handleReviewProject}
+              activeChatContext={activeChatContext}
+              setActiveChatContext={setActiveChatContext}
+              transactions={transactions}
+              onRequestTransaction={handleRequestTransaction}
             />
           )}
 
         {currentPage === 'adminDashboard' &&
           currentUser?.role === 'admin' && (
-            <AdminDashboard showToast={showToast} />
+            <AdminDashboard showToast={showToast} users={users} setUsers={setUsers} projects={projects} setProjects={setProjects} transactions={transactions} setTransactions={setTransactions} />
           )}
       </main>
 
-      <Footer />
+      
+      {footerPopup && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-[200]">
+          <div className="bg-white rounded-3xl p-8 max-w-lg w-full">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-extrabold text-slate-900">
+                {footerPopup === 'tentang' ? 'Tentang Kami' : footerPopup === 'panduan' ? 'Panduan Penggunaan' : 'Syarat & Ketentuan'}
+              </h3>
+              <button onClick={() => setFooterPopup(null)} className="text-slate-400 hover:text-slate-600"><X size={24}/></button>
+            </div>
+            <div className="text-slate-600 text-sm space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+              {footerPopup === 'tentang' && (
+                <p>GigSkill adalah platform micro-credential inovatif yang dirancang khusus untuk menjembatani mahasiswa dengan UMKM (Usaha Mikro, Kecil, dan Menengah). Misi kami adalah memberdayakan mahasiswa dengan pengalaman nyata sambil membantu UMKM mendapatkan talenta kreatif.</p>
+              )}
+              {footerPopup === 'panduan' && (
+                <ul className="list-disc pl-5 space-y-2">
+                  <li><strong>Untuk Mahasiswa:</strong> Lengkapi profil Anda, cari proyek yang sesuai dengan keahlian, kirimkan lamaran terbaik Anda. Setelah diterima, kerjakan proyek dengan penuh tanggung jawab.</li>
+                  <li><strong>Untuk UMKM:</strong> Posting kebutuhan proyek Anda secara detail. Review pelamar yang masuk, pilih kandidat terbaik, dan berikan panduan. Setelah selesai, berikan review yang jujur.</li>
+                </ul>
+              )}
+              {footerPopup === 'syarat' && (
+                <div className="space-y-2">
+                  <p>1. Pengguna wajib memberikan data yang valid.</p>
+                  <p>2. Transaksi diselesaikan melalui sistem platform untuk menjamin keamanan.</p>
+                  <p>3. Perselisihan antara Mahasiswa dan UMKM dapat dieskalasi ke tim Admin GigSkill dalam waktu 2 hari setelah proses Banding dimulai.</p>
+                </div>
+              )}
+            </div>
+            <button onClick={() => setFooterPopup(null)} className="mt-6 w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700">Tutup</button>
+          </div>
+        </div>
+      )}
+      <Footer onOpenPopup={setFooterPopup} />
+
     </div>
   );
 }
@@ -1013,37 +1224,53 @@ function LoginPage({
   );
 }
 
+
 function StudentDashboard({
   currentUser,
   users,
   projects,
   onApply,
   messages,
-  setMessages
+  setMessages,
+  onUpdateProfile,
+  onCompleteProject,
+  onStartChat,
+  onSubmitBanding,
+  activeChatContext,
+  setActiveChatContext,
+  transactions,
+  onRequestTransaction
 }) {
-  const [activeTab, setActiveTab] =
-    useState('cari');
-  const [activeChatId, setActiveChatId] = useState(null);
+  const [activeTab, setActiveTab] = React.useState('cari');
+  const [activeChatId, setActiveChatId] = React.useState(null);
 
-  const handleStartChat = (umkmId) => {
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [bandingInput, setBandingInput] = React.useState({});
+  const [categoryFilter, setCategoryFilter] = React.useState('Semua');
+  const [budgetFilter, setBudgetFilter] = React.useState('Semua');
+
+  const [selectedProject, setSelectedProject] = React.useState(null);
+  const [showApplyModal, setShowApplyModal] = React.useState(false);
+  const [proposalText, setProposalText] = React.useState('');
+
+  const [showEditProfile, setShowEditProfile] = React.useState(false);
+  const [editProfileData, setEditProfileData] = React.useState({
+    name: currentUser.name || '',
+    univ: currentUser.univ || '',
+    semester: currentUser.semester || '',
+    bio: currentUser.bio || '',
+    skills: currentUser.skills ? currentUser.skills.join(', ') : ''
+  });
+
+  const handleStartChat = (umkmId, projectId) => {
     setActiveChatId(`chat_${currentUser.id}_${umkmId}`);
     setActiveTab('pesan');
     setSelectedProject(null);
   };
 
-  const [selectedProject, setSelectedProject] =
-    useState(null);
-
   const myApplications = projects.filter((p) =>
-    p.applicants.some(
-      (a) => a.studentId === currentUser.id
-    )
+    p.applicants.some((a) => a.studentId === currentUser.id)
   );
-
-  const handleApplyClick = () => {
-    onApply(selectedProject.id);
-    setSelectedProject(null);
-  };
 
   const formatRupiah = (angka) => {
     return new Intl.NumberFormat('id-ID', {
@@ -1053,495 +1280,459 @@ function StudentDashboard({
     }).format(Number(angka));
   };
 
+  const handleApplySubmit = (e) => {
+    e.preventDefault();
+    onApply(selectedProject.id, proposalText);
+    setShowApplyModal(false);
+    setSelectedProject(null);
+    setProposalText('');
+    setActiveTab('lamaran');
+  };
+
+  const handleSaveProfile = (e) => {
+    e.preventDefault();
+    onUpdateProfile(currentUser.id, {
+      ...editProfileData,
+      semester: parseInt(editProfileData.semester) || 1,
+      skills: editProfileData.skills.split(',').map(s => s.trim()).filter(Boolean)
+    });
+    setShowEditProfile(false);
+  };
+
+  const filteredProjects = projects.filter(p => {
+    if (p.status !== 'open') return false;
+    
+    const searchLower = searchQuery.toLowerCase();
+    const matchSearch = p.title.toLowerCase().includes(searchLower) || 
+                        p.umkmName.toLowerCase().includes(searchLower) ||
+                        p.tags.some(t => t.toLowerCase().includes(searchLower));
+    if (!matchSearch) return false;
+
+    if (categoryFilter !== 'Semua' && p.category !== categoryFilter) return false;
+
+    const budget = Number(p.budget);
+    if (budgetFilter === '< 100k' && budget >= 100000) return false;
+    if (budgetFilter === '100k - 500k' && (budget < 100000 || budget > 500000)) return false;
+    if (budgetFilter === '> 500k' && budget <= 500000) return false;
+
+    return true;
+  });
+
   return (
-    <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-10">
-      {selectedProject && (
-        <div 
-          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
-          onClick={() => setSelectedProject(null)}
-        >
-          <div 
-            className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto relative"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex justify-between items-start mb-6">
+    <div className="flex flex-col md:flex-row min-h-[calc(100vh-80px)] bg-slate-50 relative">
+      {showApplyModal && selectedProject && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto">
+            <h2 className="text-2xl font-extrabold text-slate-900 mb-2">Lamar Project</h2>
+            <p className="text-slate-600 mb-6">Ceritakan mengapa Anda cocok untuk project "{selectedProject.title}"</p>
+            
+            <form onSubmit={handleApplySubmit} className="space-y-4">
               <div>
-                <span className="text-xs font-bold text-amber-600 bg-amber-50 px-3 py-1 rounded-full">
-                  Mencari Pelamar
-                </span>
-
-                <h2 className="text-2xl font-extrabold text-slate-900 mt-3">
-                  {selectedProject.title}
-                </h2>
-
-                <div className="flex items-center mt-2 text-sm font-bold text-slate-500">
-                  <span>
-                    {selectedProject.umkmName}
-                  </span>
-
-                  {selectedProject.verified && (
-                    <CheckCircle2
-                      size={16}
-                      className="ml-2 text-blue-500"
-                    />
-                  )}
-                </div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Proposal / Pesan Singkat</label>
+                <textarea 
+                  rows={4}
+                  value={proposalText}
+                  onChange={e => setProposalText(e.target.value)}
+                  className="w-full p-4 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Halo, saya memiliki pengalaman dalam hal ini..."
+                ></textarea>
               </div>
-
-              <button
-                onClick={() =>
-                  setSelectedProject(null)
-                }
-                className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <p className="text-slate-600 leading-relaxed mb-6">
-              {selectedProject.desc}
-            </p>
-
-            <div className="grid grid-cols-2 gap-4 mb-6">
-              <div className="bg-green-50 p-4 rounded-2xl">
-                <p className="text-xs font-bold text-green-700 mb-1">
-                  Budget
-                </p>
-                <p className="text-lg font-extrabold text-green-700">
-                  {formatRupiah(
-                    selectedProject.budget
-                  )}
-                </p>
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setShowApplyModal(false)} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-3.5 rounded-xl font-bold transition-all">
+                  Batal
+                </button>
+                <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-xl font-bold transition-all">
+                  Kirim Lamaran
+                </button>
               </div>
-
-              <div className="bg-slate-50 p-4 rounded-2xl">
-                <p className="text-xs font-bold text-slate-500 mb-1">
-                  Deadline
-                </p>
-
-                <p className="text-lg font-extrabold text-slate-700">
-                  {selectedProject.deadline}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={handleApplyClick}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-xl font-bold transition-all"
-              >
-                Kirim Lamaran
-              </button>
-              <button
-                onClick={() => handleStartChat(selectedProject.umkmId)}
-                className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-6 py-3.5 rounded-xl font-bold transition-all border border-slate-200 flex items-center justify-center"
-              >
-                <MessageCircle size={20} />
-              </button>
-            </div>
+            </form>
           </div>
         </div>
       )}
 
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-6">
-        <div>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
-            Dashboard Mahasiswa
-          </h1>
-
-          <div className="flex items-center mt-2 space-x-2">
-            <span className="bg-slate-200 text-slate-700 text-xs font-bold px-2.5 py-1 rounded-md uppercase">
-              {currentUser.univ ||
-                'Universitas'}
-            </span>
-
-            <span className="flex items-center text-xs font-bold text-green-700 bg-green-100 px-2.5 py-1 rounded-md">
-              <CheckCircle2
-                size={14}
-                className="mr-1"
-              />
-              Terverifikasi
-            </span>
+      {showEditProfile && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto">
+            <h2 className="text-2xl font-extrabold text-slate-900 mb-6">Edit Profil</h2>
+            <form onSubmit={handleSaveProfile} className="space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Nama Lengkap</label>
+                <input required type="text" value={editProfileData.name} onChange={e => setEditProfileData({...editProfileData, name: e.target.value})} className="w-full p-3 rounded-xl border border-slate-200" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Universitas</label>
+                  <input required type="text" value={editProfileData.univ} onChange={e => setEditProfileData({...editProfileData, univ: e.target.value})} className="w-full p-3 rounded-xl border border-slate-200" />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Semester</label>
+                  <input required type="number" min="1" max="14" value={editProfileData.semester} onChange={e => setEditProfileData({...editProfileData, semester: e.target.value})} className="w-full p-3 rounded-xl border border-slate-200" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Bio Singkat</label>
+                <textarea rows={3} value={editProfileData.bio} onChange={e => setEditProfileData({...editProfileData, bio: e.target.value})} className="w-full p-3 rounded-xl border border-slate-200"></textarea>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Skill (pisahkan dengan koma)</label>
+                <input type="text" value={editProfileData.skills} onChange={e => setEditProfileData({...editProfileData, skills: e.target.value})} placeholder="React, Figma, dll" className="w-full p-3 rounded-xl border border-slate-200" />
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button type="button" onClick={() => setShowEditProfile(false)} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-3.5 rounded-xl font-bold">Batal</button>
+                <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-xl font-bold">Simpan</button>
+              </div>
+            </form>
           </div>
         </div>
+      )}
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center space-x-4 min-w-[220px]">
-          <div className="bg-green-100 p-3 rounded-xl">
-            <DollarSign
-              size={24}
-              className="text-green-600"
-            />
-          </div>
-
-          <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-0.5">
-              Penghasilan Aktif
-            </p>
-
-            <p className="text-2xl font-extrabold text-slate-900 leading-none">
-              Rp 0
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-col lg:flex-row gap-8">
-        <div className="w-full lg:w-64 flex-shrink-0">
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-3 space-y-1.5 sticky top-24">
-            <button
-              onClick={() =>
-                setActiveTab('cari')
-              }
-              className={
-                'w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all ' +
-                (activeTab === 'cari'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-600 hover:bg-slate-100')
-              }
-            >
-              <Search size={18} />
-              <span>Cari Project</span>
-            </button>
-
-            <button
-              onClick={() =>
-                setActiveTab('lamaran')
-              }
-              className={
-                'w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all ' +
-                (activeTab === 'lamaran'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-600 hover:bg-slate-100')
-              }
-            >
-              <FileText size={18} />
-
-              <span>
-                Lamaran Saya
-                <span className="ml-2 bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-xs">
-                  {myApplications.length}
+      {selectedProject && !showApplyModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <span className="text-xs font-bold text-amber-600 bg-amber-50 px-3 py-1 rounded-full">
+                  {selectedProject.status === 'open' ? 'Mencari Pelamar' : 'Ditutup'}
                 </span>
-              </span>
-            </button>
+                <h2 className="text-2xl font-extrabold text-slate-900 mt-3">{selectedProject.title}</h2>
+                <div className="flex items-center mt-2 text-sm font-bold text-slate-500">
+                  <span>{selectedProject.umkmName}</span>
+                  {selectedProject.verified && <CheckCircle2 size={16} className="ml-2 text-blue-500" />}
+                </div>
+              </div>
+              <button onClick={() => setSelectedProject(null)} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200"><X size={20} /></button>
+            </div>
+            
+            <div className="mb-4 flex flex-wrap gap-2">
+              <span className="text-xs font-bold bg-slate-100 px-2 py-1 rounded">{selectedProject.category || 'Lainnya'}</span>
+              {selectedProject.tags.map(t => <span key={t} className="text-xs font-bold bg-blue-50 text-blue-600 px-2 py-1 rounded">{t}</span>)}
+            </div>
 
-            <button
-              onClick={() =>
-                setActiveTab('profil')
-              }
-              className={
-                'w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all ' +
-                (activeTab === 'profil'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-600 hover:bg-slate-100')
-              }
-            >
-              <User size={18} />
-              <span>Profil & Portfolio</span>
-            </button>
+            <p className="text-slate-600 leading-relaxed mb-6">{selectedProject.desc}</p>
+            
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="bg-green-50 p-4 rounded-2xl">
+                <p className="text-xs font-bold text-green-700 mb-1">Budget</p>
+                <p className="text-lg font-extrabold text-green-700">{formatRupiah(selectedProject.budget)}</p>
+              </div>
+              <div className="bg-slate-50 p-4 rounded-2xl">
+                <p className="text-xs font-bold text-slate-500 mb-1">Deadline</p>
+                <p className="text-lg font-extrabold text-slate-700">{selectedProject.deadline}</p>
+              </div>
+            </div>
 
-            <button
-              onClick={() =>
-                setActiveTab('dompet')
-              }
-              className={
-                'w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all ' +
-                (activeTab === 'dompet'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-600 hover:bg-slate-100')
-              }
-            >
-              <CreditCard size={18} />
-              <span>Dompet Saya</span>
-            </button>
+            <p className="text-sm text-slate-500 font-medium mb-6">{selectedProject.applicants.length} orang telah melamar</p>
 
-            <button
-              onClick={() =>
-                setActiveTab('pesan')
-              }
-              className={
-                'w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all ' +
-                (activeTab === 'pesan'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-600 hover:bg-slate-100')
-              }
-            >
-              <MessageCircle size={18} />
-              <span>Pesan</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="flex-1">
-          {activeTab === 'dompet' && (
-            <DompetView role="student" />
-          )}
-
-          {activeTab === 'pesan' && (
-            <ChatView 
-              currentUser={currentUser} 
-              users={users} 
-              role="student" 
-              messages={messages} 
-              setMessages={setMessages} 
-              initialActiveChat={activeChatId}
-            />
-          )}
-
-          {activeTab === 'cari' && (
-            <div className="space-y-6">
-              <div className="bg-white p-2 rounded-2xl shadow-sm border border-slate-200 flex items-center">
-                <Search
-                  className="text-slate-400 ml-4 mr-2"
-                  size={20}
-                />
-
-                <input
-                  type="text"
-                  placeholder="Cari project (desain, admin, web)..."
-                  className="w-full p-2.5 outline-none text-sm font-medium text-slate-700 bg-transparent"
-                />
-
-                <button className="bg-slate-900 text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-slate-800 transition-colors">
-                  Cari
+            {selectedProject.status === 'open' && (
+              <div className="flex gap-3">
+                <button onClick={() => setShowApplyModal(true)} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-xl font-bold transition-all">
+                  Kirim Lamaran
+                </button>
+                <button onClick={() => handleStartChat(selectedProject.umkmId, selectedProject.id)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-6 py-3.5 rounded-xl font-bold border border-slate-200 flex items-center justify-center">
+                  <MessageCircle size={20} />
                 </button>
               </div>
+            )}
+          </div>
+        </div>
+      )}
 
+      {/* Sidebar Navigation */}
+      <div className="w-full md:w-64 bg-white border-r border-slate-200 p-6 flex flex-col z-10 sticky top-0 h-auto md:h-[calc(100vh-80px)]">
+        <h2 className="text-sm font-extrabold text-slate-400 uppercase tracking-wider mb-4">Menu</h2>
+        <nav className="space-y-2 flex-1">
+          {[
+            { id: 'cari', icon: Search, label: 'Cari Project' },
+            { id: 'lamaran', icon: Briefcase, label: 'Lamaran Saya' },
+            { id: 'profil', icon: User, label: 'Profil & Portfolio' },
+            { id: 'dompet', icon: CreditCard, label: 'Dompet Saya' },
+            { id: 'pesan', icon: MessageCircle, label: 'Pesan' }
+          ].map((item) => (
+            <button key={item.id} onClick={() => setActiveTab(item.id)} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all ${activeTab === item.id ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-100'}`}>
+              <item.icon size={18} />
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 p-6 md:p-10 max-w-5xl mx-auto w-full">
+        <div className="mb-8">
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Dashboard Mahasiswa</h1>
+          <div className="flex items-center mt-2 space-x-2">
+            <span className="bg-slate-200 text-slate-700 text-xs font-bold px-2.5 py-1 rounded-md uppercase">{currentUser.univ || 'Universitas'}</span>
+            <span className="flex items-center text-xs font-bold text-green-700 bg-green-100 px-2.5 py-1 rounded-md"><CheckCircle2 size={14} className="mr-1" /> Terverifikasi</span>
+          </div>
+        </div>
+
+        {activeTab === 'dompet' && <DompetView role="student" currentUser={currentUser} onRequestTransaction={onRequestTransaction} transactions={transactions} />}
+        {activeTab === 'pesan' && <ChatView currentUser={currentUser} users={users} role="student" messages={messages} setMessages={setMessages} initialActiveChat={activeChatId} activeChatContext={activeChatContext} setActiveChatContext={setActiveChatContext} projects={projects} />}
+
+        {activeTab === 'cari' && (
+          <div className="space-y-6">
+            <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-200 flex flex-col md:flex-row gap-4 items-center">
+              <div className="flex-1 flex items-center bg-slate-50 rounded-xl px-4 py-2 w-full">
+                <Search className="text-slate-400 mr-2" size={20} />
+                <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Cari judul, tag, atau UMKM..." className="w-full p-2 outline-none text-sm font-medium bg-transparent" />
+              </div>
+              <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 outline-none w-full md:w-auto">
+                <option value="Semua">Semua Kategori</option>
+                <option value="Desain">Desain</option>
+                <option value="Pemasaran">Pemasaran</option>
+                <option value="Administrasi">Administrasi</option>
+              </select>
+              <select value={budgetFilter} onChange={e => setBudgetFilter(e.target.value)} className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 outline-none w-full md:w-auto">
+                <option value="Semua">Semua Budget</option>
+                <option value="< 100k">&lt; Rp 100.000</option>
+                <option value="100k - 500k">Rp 100k - 500k</option>
+                <option value="> 500k">&gt; Rp 500.000</option>
+              </select>
+            </div>
+            
+            {filteredProjects.length === 0 ? (
+              <div className="text-center py-20 bg-white rounded-3xl border border-slate-200">
+                <Briefcase className="mx-auto text-slate-300 mb-4" size={48} />
+                <p className="font-bold text-slate-500">Tidak ada project yang sesuai dengan filter Anda.</p>
+                <button onClick={() => { setSearchQuery(''); setCategoryFilter('Semua'); setBudgetFilter('Semua'); }} className="mt-4 text-blue-600 font-bold hover:underline">Reset Filter</button>
+              </div>
+            ) : (
               <div className="grid gap-4">
-                {projects.map((project) => {
-                  const hasApplied =
-                    project.applicants.some(
-                      (a) =>
-                        a.studentId ===
-                        currentUser.id
-                    );
-
+                {filteredProjects.map((project) => {
+                  const hasApplied = project.applicants.some((a) => a.studentId === currentUser.id);
                   return (
                     <div
                       key={project.id}
-                      onClick={() =>
-                        !hasApplied &&
-                        setSelectedProject(project)
-                      }
-                      className={
-                        'bg-white p-6 rounded-2xl border transition-all group ' +
-                        (hasApplied
-                          ? 'border-slate-200 opacity-60 cursor-default'
-                          : 'border-slate-200 hover:border-blue-400 hover:shadow-md cursor-pointer')
-                      }
+                      onClick={() => !hasApplied && setSelectedProject(project)}
+                      className={'bg-white p-6 rounded-2xl border transition-all group ' + (hasApplied ? 'border-slate-200 opacity-60 cursor-default' : 'border-slate-200 hover:border-blue-400 hover:shadow-md cursor-pointer')}
                     >
-                      <div className="flex justify-between items-start mb-3">
+                      <div className="flex justify-between items-start">
                         <div>
-                          <div className="flex items-center space-x-2 mb-1.5">
-                            <span className="text-xs font-bold text-slate-500 uppercase">
-                              {project.umkmName}
-                            </span>
-
-                            {project.verified && (
-                              <CheckCircle2
-                                size={14}
-                                className="text-blue-500"
-                              />
-                            )}
-                          </div>
-
-                          <h3
-                            className={
-                              'text-xl font-extrabold text-slate-900 transition-colors ' +
-                              (!hasApplied
-                                ? 'group-hover:text-blue-600'
-                                : '')
-                            }
-                          >
-                            {project.title}
-                          </h3>
+                          <p className="text-xs font-bold text-slate-500 mb-1">{project.umkmName}</p>
+                          <h3 className={'text-xl font-extrabold ' + (hasApplied ? 'text-slate-700' : 'text-slate-900 group-hover:text-blue-600')}>{project.title}</h3>
                         </div>
-
-                        <div className="text-right flex flex-col items-end">
-                          <span className="block text-xl font-extrabold text-green-600">
-                            {formatRupiah(
-                              project.budget
-                            )}
-                          </span>
-
-                          <span className="flex items-center justify-end text-xs font-bold text-slate-400 mt-1">
-                            <Clock
-                              size={12}
-                              className="mr-1"
-                            />
-                            {project.deadline}
-                          </span>
+                        <div className="bg-green-50 px-3 py-1.5 rounded-lg border border-green-100">
+                          <p className="text-sm font-extrabold text-green-700">{formatRupiah(project.budget)}</p>
                         </div>
                       </div>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {project.tags.map((tag) => (
+                          <span key={tag} className="bg-slate-100 text-slate-600 text-xs font-bold px-2.5 py-1 rounded-md">{tag}</span>
+                        ))}
+                      </div>
+                      {hasApplied && (
+                        <div className="mt-4 inline-flex items-center text-xs font-bold text-blue-700 bg-blue-50 px-3 py-1.5 rounded-full">
+                          <CheckCircle2 size={14} className="mr-1.5" /> Sudah Dilamar
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
-                      <div className="flex justify-between items-end mt-4">
-                        <div className="flex gap-2 flex-wrap">
-                          {project.tags.map(
-                            (tag) => (
-                              <span
-                                key={tag}
-                                className="bg-slate-50 border border-slate-100 text-slate-600 text-xs font-bold px-2.5 py-1 rounded-lg"
-                              >
-                                {tag}
-                              </span>
-                            )
+        {activeTab === 'lamaran' && (
+          <div className="space-y-6">
+            <h2 className="text-xl font-extrabold text-slate-900 mb-4">Riwayat Lamaran</h2>
+            {myApplications.length === 0 ? (
+              <div className="bg-white p-10 rounded-3xl border border-slate-200 text-center">
+                <Briefcase className="mx-auto mb-3 text-slate-300" size={40} />
+                <p className="text-slate-500 font-medium">Belum ada lamaran yang diajukan.</p>
+              </div>
+            ) : (
+              <div className="grid gap-4">
+                {myApplications.map(project => {
+                  const application = project.applicants.find(a => a.studentId === currentUser.id);
+                  let statusColor = 'bg-amber-100 text-amber-700';
+                  if (application.status === 'Diterima' || project.status === 'Selesai') statusColor = 'bg-green-100 text-green-700';
+                  if (application.status === 'Ditolak') statusColor = 'bg-red-100 text-red-700';
+
+                  const isAccepted = application.status === 'Diterima';
+                  const isCompleted = project.status === 'Selesai';
+                  
+                  return (
+                    <div key={project.id} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <span className="text-xs font-bold text-slate-500">{project.umkmName}</span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusColor}`}>
+                            {isCompleted ? 'Selesai' : application.status}
+                          </span>
+                        </div>
+                        <h3 className="text-lg font-extrabold text-slate-900">{project.title}</h3>
+                        <p className="text-sm text-slate-500 mt-1 line-clamp-2">{project.desc}</p>
+                        <p className="text-sm text-slate-500 mt-2 italic bg-slate-50 p-2 rounded-lg border border-slate-100">Proposal: "{application.proposal}"</p>
+                        <p className="text-xs font-bold text-slate-400 mt-2">Dilamar pada: {application.date}</p>
+                        
+                        {(isAccepted && !isCompleted && project.status !== 'Menunggu Review' && project.status !== 'Menunggu Banding' && project.status !== 'Banding Berlangsung') && (
+                           <div className="mt-4 bg-slate-50 border border-slate-200 p-4 rounded-xl">
+                             <div className="flex justify-between items-center mb-1">
+                               <span className="text-xs font-bold text-slate-600">Progres Pengerjaan</span>
+                               <span className="text-xs font-bold text-blue-600">Sedang Dikerjakan</span>
+                             </div>
+                             <div className="w-full bg-slate-200 rounded-full h-2">
+                               <div className="bg-blue-600 h-2 rounded-full w-1/2 animate-pulse"></div>
+                             </div>
+                           </div>
+                        )}
+                        {project.status === 'Menunggu Review' && (
+                           <div className="mt-4 bg-amber-50 border border-amber-200 p-4 rounded-xl">
+                             <p className="text-sm font-bold text-amber-700">Menunggu Review UMKM</p>
+                             <p className="text-xs text-amber-600">Pekerjaan telah dikirim dan sedang direview.</p>
+                           </div>
+                        )}
+                        {project.status === 'Menunggu Banding' && project.banding && (
+                           <div className="mt-4 bg-red-50 border border-red-200 p-4 rounded-xl">
+                             <p className="text-sm font-bold text-red-700">Pekerjaan Ditolak UMKM</p>
+                             <p className="text-xs text-red-600 italic mt-1">"{project.banding.reason}"</p>
+                             <div className="mt-3">
+                               <textarea 
+                                 className="w-full text-sm p-2 rounded-lg border border-red-200 focus:outline-none focus:ring-1 focus:ring-red-500" 
+                                 placeholder="Berikan penjelasan/jawaban Anda..."
+                                 rows="2"
+                                 value={bandingInput[project.id] || ''}
+                                 onChange={e => setBandingInput({...bandingInput, [project.id]: e.target.value})}
+                               ></textarea>
+                               <button 
+                                 onClick={() => onSubmitBanding(project.id, bandingInput[project.id] || '')}
+                                 disabled={!(bandingInput[project.id] && bandingInput[project.id].trim())}
+                                 className="mt-2 text-xs font-bold bg-red-600 text-white px-4 py-2 rounded-lg disabled:opacity-50 hover:bg-red-700"
+                               >Kirim Banding</button>
+                             </div>
+                           </div>
+                        )}
+                        {project.status === 'Banding Berlangsung' && project.banding && (
+                           <div className="mt-4 bg-purple-50 border border-purple-200 p-4 rounded-xl">
+                             <p className="text-sm font-bold text-purple-700">Banding Sedang Diproses</p>
+                             <p className="text-xs text-purple-600 mt-1">Menunggu mediasi dari tim Admin GigSkill.</p>
+                           </div>
+                        )}
+                      </div>
+                      <div className="text-left md:text-right flex flex-col md:items-end justify-between self-stretch">
+                        <p className="text-lg font-extrabold text-green-700 mb-2">{formatRupiah(project.budget)}</p>
+                        <div className="flex gap-2 flex-wrap md:justify-end mt-auto">
+                          <button onClick={() => handleStartChat(project.umkmId, project.id)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold px-4 py-2 rounded-xl transition-colors flex items-center">
+                            <MessageCircle size={16} className="mr-1.5" /> Chat
+                          </button>
+                          {(isAccepted && !isCompleted && project.status !== 'Menunggu Review' && project.status !== 'Menunggu Banding' && project.status !== 'Banding Berlangsung') && (
+                            <button onClick={() => onCompleteProject(project.id)} className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold px-4 py-2 rounded-xl transition-colors">
+                              Project Selesai
+                            </button>
                           )}
                         </div>
-
-                        {hasApplied && (
-                          <span className="bg-blue-100 text-blue-700 text-xs font-bold px-3 py-1 rounded-lg">
-                            Sudah Dilamar
-                          </span>
-                        )}
                       </div>
                     </div>
                   );
                 })}
               </div>
-            </div>
-          )}
+            )}
+          </div>
+        )}
 
-          {activeTab === 'lamaran' && (
-            <div className="space-y-4">
-              {myApplications.length === 0 ? (
-                <div className="bg-white rounded-3xl border border-slate-200 p-16 text-center shadow-sm">
-                  <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
-                    <Briefcase size={32} />
-                  </div>
-
-                  <h3 className="text-lg font-bold text-slate-900 mb-2">
-                    Belum ada project yang
-                    dilamar
-                  </h3>
-
-                  <p className="text-slate-500 text-sm max-w-sm mx-auto mb-6">
-                    Mulai eksplorasi peluang
-                    untuk membangun portofolio
-                    Anda.
-                  </p>
-
-                  <button
-                    onClick={() =>
-                      setActiveTab('cari')
-                    }
-                    className="bg-slate-900 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-slate-800"
-                  >
-                    Cari Project Sekarang
-                  </button>
-                </div>
-              ) : (
-                myApplications.map((project) => (
-                  <div
-                    key={project.id}
-                    className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
-                  >
-                    <div>
-                      <div className="flex items-center space-x-2 mb-1">
-                        <span className="text-xs font-bold text-slate-500 uppercase">
-                          {project.umkmName}
-                        </span>
-                      </div>
-
-                      <h3 className="text-lg font-extrabold text-slate-900">
-                        {project.title}
-                      </h3>
-                    </div>
-
-                    <span className="bg-amber-100 text-amber-700 text-xs font-bold px-3 py-1.5 rounded-lg border border-amber-200">
-                      Menunggu Review UMKM
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-
-          {activeTab === 'profil' && (
-            <div className="bg-white rounded-3xl border border-slate-200 p-8 shadow-sm">
-              <div className="flex items-center space-x-6 mb-8 border-b border-slate-100 pb-8">
-                <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-extrabold text-3xl">
+        {activeTab === 'profil' && (
+          <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-8">
+              <div className="flex items-center gap-6">
+                <div className="w-24 h-24 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-3xl font-bold">
                   {currentUser.name.charAt(0)}
                 </div>
-
                 <div>
-                  <h2 className="text-2xl font-extrabold text-slate-900">
-                    {currentUser.name}
-                  </h2>
+                  <h2 className="text-2xl font-extrabold text-slate-900">{currentUser.name}</h2>
+                  <p className="text-slate-500 font-medium">{currentUser.univ} • Semester {currentUser.semester || '?'}</p>
+                  <div className="flex items-center mt-2 text-amber-500">
+                    <span className="font-bold mr-1">{currentUser.rating || '0.0'}</span>
+                    <span className="text-slate-400 text-sm font-medium">/ 5.0 (Rating)</span>
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => setShowEditProfile(true)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-6 py-3 rounded-xl transition-colors">
+                Edit Profil
+              </button>
+            </div>
+            
+            <div className="space-y-8">
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-400 uppercase tracking-wider mb-3">Tentang Saya</h3>
+                <p className="text-slate-700 leading-relaxed">{currentUser.bio || 'Belum ada bio. Edit profil untuk menambahkan.'}</p>
+              </div>
 
-                  <p className="text-slate-500 font-medium">
-                    {currentUser.email} •{' '}
-                    {currentUser.univ}
-                  </p>
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-400 uppercase tracking-wider mb-3">Keahlian (Skills)</h3>
+                <div className="flex flex-wrap gap-2">
+                  {currentUser.skills && currentUser.skills.length > 0 ? (
+                    currentUser.skills.map((skill, idx) => (
+                      <span key={idx} className="bg-blue-50 text-blue-700 font-bold text-sm px-3 py-1.5 rounded-lg border border-blue-100">{skill}</span>
+                    ))
+                  ) : (
+                    <span className="text-slate-400 text-sm">Belum ada skill.</span>
+                  )}
                 </div>
               </div>
 
               <div>
-                <h3 className="font-bold text-slate-900 mb-4 flex items-center">
-                  <Star
-                    size={18}
-                    className="mr-2 text-amber-500"
-                  />
-                  Skill Saya
-                </h3>
-
-                <div className="flex gap-2 mb-8">
-                  <span className="bg-slate-100 text-slate-500 px-3 py-1.5 rounded-lg text-sm font-bold border border-dashed border-slate-300 cursor-pointer hover:bg-slate-200">
-                    + Tambah Skill
-                  </span>
+                <h3 className="text-sm font-extrabold text-slate-400 uppercase tracking-wider mb-3">Portfolio</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {currentUser.portfolios && currentUser.portfolios.length > 0 ? (
+                    currentUser.portfolios.map((port, idx) => (
+                      <div key={idx} className="border border-slate-200 rounded-xl p-4 flex justify-between items-center hover:border-blue-300 transition-colors cursor-pointer">
+                        <span className="font-bold text-slate-700">{port.title}</span>
+                        <ArrowRight size={16} className="text-slate-400" />
+                      </div>
+                    ))
+                  ) : (
+                    <span className="text-slate-400 text-sm">Belum ada portofolio.</span>
+                  )}
                 </div>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
+
 
 function UMKMDashboard({
   currentUser,
   users,
   projects,
   onPostProject,
+  onUpdateApplicantStatus,
   messages,
-  setMessages
+  setMessages,
+  onUpdateProfile,
+  onStartChat,
+  onReviewProject,
+  activeChatContext,
+  setActiveChatContext,
+  transactions,
+  onRequestTransaction
 }) {
-  const [activeTab, setActiveTab] =
-    useState('project');
-  const [activeChatId, setActiveChatId] = useState(null);
+  const [activeTab, setActiveTab] = React.useState('project');
+  const [activeChatId, setActiveChatId] = React.useState(null);
+  const [rejectForm, setRejectForm] = React.useState(null);
+  const [rejectReason, setRejectReason] = React.useState('');
+  
+  const [isCustomCategory, setIsCustomCategory] = React.useState(false);
+  const [isCustomDeadline, setIsCustomDeadline] = React.useState(false);
+  const [expandedProject, setExpandedProject] = React.useState(null);
+  const [showStudentProfile, setShowStudentProfile] = React.useState(null);
 
-  const handleStartChat = (studentId) => {
+  const [showEditProfile, setShowEditProfile] = React.useState(false);
+  const [editProfileData, setEditProfileData] = React.useState({
+    name: currentUser.name || '',
+    category: currentUser.category || '',
+    phone: currentUser.phone || '',
+    desc: currentUser.desc || ''
+  });
+
+  const handleStartChat = (studentId, projectId) => {
     setActiveChatId(`chat_${studentId}_${currentUser.id}`);
     setActiveTab('pesan');
-  };
-
-  const [expandedProject, setExpandedProject] =
-    useState(null);
-
-  const [title, setTitle] = useState('');
-  const [desc, setDesc] = useState('');
-  const [budget, setBudget] = useState('');
-  const [deadline, setDeadline] =
-    useState('1-3 Hari');
-
-  const myProjects = projects.filter(
-    (p) => p.umkmId === currentUser.id
-  );
-
-  const handlePostSubmit = (e) => {
-    e.preventDefault();
-
-    onPostProject({
-      title,
-      desc,
-      budget,
-      deadline
-    });
-
-    setTitle('');
-    setDesc('');
-    setBudget('');
-    setDeadline('1-3 Hari');
-    setActiveTab('project');
+    if (onStartChat) onStartChat(studentId, projectId);
   };
 
   const formatRupiah = (angka) => {
@@ -1552,807 +1743,349 @@ function UMKMDashboard({
     }).format(Number(angka));
   };
 
+  const handleSaveProfile = (e) => {
+    e.preventDefault();
+    onUpdateProfile(currentUser.id, editProfileData);
+    setShowEditProfile(false);
+  };
+
+  // Only show projects created by this UMKM (using dummy/u2 for mockup purposes)
+  const myProjects = projects.filter(
+    (p) => p.umkmId === currentUser.id || (p.umkmId === 'dummy' && currentUser.id === 'u2')
+  );
+
   return (
-    <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-10">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-6">
-        <div>
-          <h1 className="text-3xl font-extrabold text-slate-900">
-            Dashboard UMKM
-          </h1>
-
-          <p className="text-slate-500 mt-2 font-medium">
-            {currentUser.name} • Aktif
-          </p>
+    <div className="flex flex-col md:flex-row min-h-[calc(100vh-80px)] bg-slate-50">
+      
+      {showEditProfile && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto">
+            <h2 className="text-2xl font-extrabold text-slate-900 mb-6">Edit Profil UMKM</h2>
+            <form onSubmit={handleSaveProfile} className="space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Nama Usaha</label>
+                <input required type="text" value={editProfileData.name} onChange={e => setEditProfileData({...editProfileData, name: e.target.value})} className="w-full p-3 rounded-xl border border-slate-200" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Kategori</label>
+                  <input required type="text" value={editProfileData.category} onChange={e => setEditProfileData({...editProfileData, category: e.target.value})} className="w-full p-3 rounded-xl border border-slate-200" />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">No. HP / Kontak</label>
+                  <input required type="text" value={editProfileData.phone} onChange={e => setEditProfileData({...editProfileData, phone: e.target.value})} className="w-full p-3 rounded-xl border border-slate-200" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Deskripsi Usaha</label>
+                <textarea rows={4} value={editProfileData.desc} onChange={e => setEditProfileData({...editProfileData, desc: e.target.value})} className="w-full p-3 rounded-xl border border-slate-200"></textarea>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button type="button" onClick={() => setShowEditProfile(false)} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-3.5 rounded-xl font-bold">Batal</button>
+                <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-xl font-bold">Simpan</button>
+              </div>
+            </form>
+          </div>
         </div>
+      )}
 
-        <button
-          onClick={() => setActiveTab('post')}
-          className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-sm flex items-center space-x-2"
-        >
-          <Plus size={18} />
-          <span>Posting Project Baru</span>
-        </button>
+      {showStudentProfile && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-start mb-6">
+              <h2 className="text-2xl font-extrabold text-slate-900">Profil Pelamar</h2>
+              <button onClick={() => setShowStudentProfile(null)} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200"><X size={20} /></button>
+            </div>
+            <div className="flex items-center gap-4 mb-6">
+              <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-2xl font-bold">
+                {showStudentProfile.name.charAt(0)}
+              </div>
+              <div>
+                <h3 className="text-xl font-extrabold text-slate-900">{showStudentProfile.name}</h3>
+                <p className="text-slate-500 text-sm">{showStudentProfile.univ} • Semester {showStudentProfile.semester}</p>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Bio</h4>
+                <p className="text-slate-700 text-sm">{showStudentProfile.bio || '-'}</p>
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Skill</h4>
+                <div className="flex flex-wrap gap-2">
+                  {showStudentProfile.skills?.map(s => <span key={s} className="bg-blue-50 text-blue-700 font-bold text-xs px-2 py-1 rounded-md">{s}</span>)}
+                </div>
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Portfolio</h4>
+                <ul className="list-disc pl-5 text-sm text-blue-600 font-medium">
+                  {showStudentProfile.portfolios?.map(p => <li key={p.title}><a href={p.link} className="hover:underline">{p.title}</a></li>)}
+                </ul>
+              </div>
+            </div>
+            <div className="mt-6 pt-6 border-t border-slate-100 text-center">
+              <span className="inline-block bg-amber-100 text-amber-700 font-bold px-3 py-1.5 rounded-lg">Rating: {showStudentProfile.rating} / 5.0</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sidebar Navigation */}
+      <div className="w-full md:w-64 bg-white border-r border-slate-200 p-6 flex flex-col z-10 sticky top-0 h-auto md:h-[calc(100vh-80px)]">
+        <h2 className="text-sm font-extrabold text-slate-400 uppercase tracking-wider mb-4">Menu UMKM</h2>
+        <nav className="space-y-2 flex-1">
+          {[
+            { id: 'project', icon: Briefcase, label: 'Project Saya' },
+            { id: 'post', icon: Plus, label: 'Buat Project Baru' },
+            { id: 'profil', icon: Store, label: 'Profil Usaha' },
+            { id: 'dompet', icon: CreditCard, label: 'Dompet Saya' },
+            { id: 'pesan', icon: MessageCircle, label: 'Pesan' }
+          ].map((item) => (
+            <button key={item.id} onClick={() => setActiveTab(item.id)} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all ${activeTab === item.id ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-100'}`}>
+              <item.icon size={18} />
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </nav>
       </div>
 
-      <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="flex border-b border-slate-100">
-          <button
-            onClick={() => setActiveTab('project')}
-            className={
-              'px-6 py-4 font-bold text-sm border-b-2 transition-colors ' +
-              (activeTab === 'project'
-                ? 'border-green-600 text-green-700 bg-green-50/50'
-                : 'border-transparent text-slate-500 hover:bg-slate-50')
-            }
-          >
-            Project Aktif Anda ({myProjects.length})
-          </button>
-
-          <button
-            onClick={() => setActiveTab('post')}
-            className={
-              'px-6 py-4 font-bold text-sm border-b-2 transition-colors ' +
-              (activeTab === 'post'
-                ? 'border-green-600 text-green-700 bg-green-50/50'
-                : 'border-transparent text-slate-500 hover:bg-slate-50')
-            }
-          >
-            Buat Posting Baru
-          </button>
-          
-          <button
-            onClick={() => setActiveTab('dompet')}
-            className={
-              'px-6 py-4 font-bold text-sm border-b-2 transition-colors flex items-center ' +
-              (activeTab === 'dompet'
-                ? 'border-green-600 text-green-700 bg-green-50/50'
-                : 'border-transparent text-slate-500 hover:bg-slate-50')
-            }
-          >
-            <CreditCard size={18} className="mr-2" />
-            Dompet Saya
-          </button>
-          
-          <button
-            onClick={() => setActiveTab('pesan')}
-            className={
-              'px-6 py-4 font-bold text-sm border-b-2 transition-colors flex items-center ' +
-              (activeTab === 'pesan'
-                ? 'border-green-600 text-green-700 bg-green-50/50'
-                : 'border-transparent text-slate-500 hover:bg-slate-50')
-            }
-          >
-            <MessageCircle size={18} className="mr-2" />
-            Pesan
-          </button>
+      {/* Main Content */}
+      <div className="flex-1 p-6 md:p-10 max-w-5xl mx-auto w-full">
+        <div className="mb-8 flex justify-between items-end">
+          <div>
+            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Dashboard UMKM</h1>
+            <p className="text-slate-500 mt-1 font-medium">Kelola project dan pelamar Anda</p>
+          </div>
         </div>
 
-        <div className="p-6 sm:p-8">
-          {activeTab === 'dompet' && (
-            <DompetView role="umkm" />
-          )}
+        {activeTab === 'dompet' && <DompetView role="umkm" currentUser={currentUser} onRequestTransaction={onRequestTransaction} transactions={transactions} />}
+        {activeTab === 'pesan' && <ChatView currentUser={currentUser} users={users} role="umkm" messages={messages} setMessages={setMessages} initialActiveChat={activeChatId} activeChatContext={activeChatContext} setActiveChatContext={setActiveChatContext} projects={projects} />}
 
-          {activeTab === 'pesan' && (
-            <ChatView 
-              currentUser={currentUser} 
-              users={users} 
-              role="umkm" 
-              messages={messages} 
-              setMessages={setMessages} 
-              initialActiveChat={activeChatId}
-            />
-          )}
-
-          {activeTab === 'project' && (
-            <div className="space-y-6">
-              {myProjects.length === 0 ? (
-                <div className="text-center py-10">
-                  <p className="text-slate-500 mb-4">
-                    Anda belum memposting project
-                    apapun.
-                  </p>
-
-                  <button
-                    onClick={() =>
-                      setActiveTab('post')
-                    }
-                    className="bg-slate-900 text-white px-6 py-2 rounded-xl font-bold"
-                  >
-                    Mulai Posting
-                  </button>
-                </div>
-              ) : (
-                myProjects.map((project) => (
-                  <div
-                    key={project.id}
-                    className="border border-slate-200 rounded-2xl p-6 flex flex-col gap-4 bg-white shadow-sm"
-                  >
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        {activeTab === 'project' && (
+          <div className="space-y-6">
+            {myProjects.length === 0 ? (
+              <div className="text-center py-20 bg-white rounded-3xl border border-slate-200 shadow-sm">
+                <Briefcase className="mx-auto text-slate-300 mb-4" size={48} />
+                <p className="font-bold text-slate-500 mb-4">Belum ada project yang diposting.</p>
+                <button onClick={() => setActiveTab('post')} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold">Buat Project Pertama</button>
+              </div>
+            ) : (
+              <div className="grid gap-6">
+                {myProjects.map((project) => (
+                  <div key={project.id} className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-200">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
                       <div>
                         <div className="flex items-center space-x-3 mb-2">
-                          <span className="bg-amber-100 text-amber-700 text-[10px] px-2 py-1 rounded-md font-bold uppercase tracking-widest border border-amber-200">
-                            Mencari Pelamar
+                          <span className={`text-[10px] px-2 py-1 rounded-md font-bold uppercase tracking-widest border ${project.status === 'open' ? 'bg-amber-100 text-amber-700 border-amber-200' : project.status === 'Selesai' ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-green-100 text-green-700 border-green-200'}`}>
+                            {project.status === 'open' ? 'Mencari Pelamar' : project.status === 'Selesai' ? 'Project Selesai' : 'Mahasiswa Terpilih'}
                           </span>
                         </div>
-
-                        <h3 className="text-xl font-extrabold text-slate-900">
-                          {project.title}
-                        </h3>
-
-                        <p className="text-sm font-medium text-slate-500 mt-1">
-                          Budget:{' '}
-                          <span className="text-slate-700 font-bold">
-                            {formatRupiah(
-                              project.budget
-                            )}
-                          </span>{' '}
-                          • Deadline:{' '}
-                          <span className="text-slate-700 font-bold">
-                            {project.deadline}
-                          </span>
-                        </p>
+                        <h3 className="text-xl font-extrabold text-slate-900">{project.title}</h3>
                       </div>
-
-                      <button
-                        onClick={() =>
-                          setExpandedProject(
-                            expandedProject ===
-                              project.id
-                              ? null
-                              : project.id
-                          )
-                        }
-                        className={
-                          'border px-6 py-3 rounded-xl text-sm font-bold transition-colors flex items-center justify-center space-x-2 ' +
-                          (project.applicants.length >
-                          0
-                            ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
-                            : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100')
-                        }
-                      >
-                        <User size={18} />
-                        <span>
-                          Lihat Pelamar (
-                          {project.applicants.length})
-                        </span>
-                      </button>
+                      <div className="text-left md:text-right">
+                        <p className="text-xl font-extrabold text-green-700 mb-1">{formatRupiah(project.budget)}</p>
+                        <p className="text-sm font-bold text-slate-500">{project.applicants.length} Pelamar</p>
+                      </div>
                     </div>
+                    
+                    <button onClick={() => setExpandedProject(expandedProject === project.id ? null : project.id)} className="text-blue-600 text-sm font-bold flex items-center hover:underline">
+                      {expandedProject === project.id ? 'Sembunyikan Pelamar' : 'Lihat Daftar Pelamar'}
+                      <ChevronDown size={16} className={`ml-1 transition-transform ${expandedProject === project.id ? 'rotate-180' : ''}`} />
+                    </button>
 
-                    {expandedProject ===
-                      project.id && (
-                      <div className="mt-4 pt-4 border-t border-slate-100">
-                        <h4 className="text-sm font-bold text-slate-700 mb-3">
-                          Daftar Mahasiswa yang
-                          Melamar:
-                        </h4>
-
-                        {project.applicants.length ===
-                        0 ? (
-                          <p className="text-xs text-slate-400 italic">
-                            Belum ada mahasiswa
-                            yang melamar project
-                            ini.
-                          </p>
+                    {expandedProject === project.id && (
+                      <div className="mt-6 pt-6 border-t border-slate-100">
+                        {project.applicants.length === 0 ? (
+                          <p className="text-center text-slate-500 text-sm py-4 bg-slate-50 rounded-xl">Belum ada yang melamar.</p>
                         ) : (
-                          <div className="space-y-3">
-                            {project.applicants.map(
-                              (applicant, idx) => (
-                                <div
-                                  key={idx}
-                                  className="flex justify-between items-center bg-slate-50 p-3 rounded-xl border border-slate-100"
-                                >
-                                  <div className="flex items-center space-x-3">
-                                    <div className="w-8 h-8 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold text-xs">
-                                      {applicant.studentName.charAt(
-                                        0
-                                      )}
+                          <div className="space-y-4">
+                            {project.applicants.map((applicant, idx) => {
+                              const studentInfo = users.find(u => u.id === applicant.studentId);
+                              return (
+                                <div key={idx} className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                    <div className="flex items-center space-x-4">
+                                      <div className="w-10 h-10 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold">
+                                        {applicant.studentName.charAt(0)}
+                                      </div>
+                                      <div>
+                                        <div className="flex items-center gap-2">
+                                          <p className="font-bold text-slate-900">{applicant.studentName}</p>
+                                          {applicant.status !== 'Menunggu' && (
+                                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${applicant.status === 'Diterima' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                              {applicant.status}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <p className="text-xs text-slate-500">{studentInfo?.univ} • Melamar pada {applicant.date}</p>
+                                      </div>
                                     </div>
+                                    <button onClick={() => setShowStudentProfile(studentInfo)} className="text-xs font-bold text-blue-600 hover:underline">Lihat Profil Lengkap</button>
+                                  </div>
+                                  
+                                  <div className="mt-3 bg-white p-3 rounded-xl border border-slate-100 text-sm text-slate-600">
+                                    <span className="font-bold text-slate-700 block mb-1">Pesan / Proposal:</span>
+                                    "{applicant.proposal}"
+                                  </div>
 
-                                    <div>
-                                      <p className="text-sm font-bold text-slate-900">
-                                        {
-                                          applicant.studentName
-                                        }
-                                      </p>
-
-                                      <p className="text-[10px] text-slate-500">
-                                        Melamar pada{' '}
-                                        {
-                                          applicant.date
-                                        }
-                                      </p>
+                                  {applicant.status === 'Menunggu' && project.status === 'open' && (
+                                    <div className="mt-4 flex gap-2 justify-end border-t border-slate-200 pt-3">
+                                      <button onClick={() => handleStartChat(applicant.studentId, project.id)} className="text-xs bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold px-4 py-2 rounded-xl flex items-center">
+                                        <MessageCircle size={14} className="mr-1.5" /> Chat
+                                      </button>
+                                      <button onClick={() => onUpdateApplicantStatus(project.id, applicant.studentId, 'Ditolak')} className="text-xs bg-red-50 hover:bg-red-100 text-red-700 font-bold px-4 py-2 rounded-xl">
+                                        Tolak
+                                      </button>
+                                      <button onClick={() => onUpdateApplicantStatus(project.id, applicant.studentId, 'Diterima')} className="text-xs bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-2 rounded-xl">
+                                        Terima & Pilih
+                                      </button>
                                     </div>
-                                  </div>
-                                  <div className="flex gap-2">
-                                    <button 
-                                      onClick={(e) => { 
-                                        e.stopPropagation(); 
-                                        handleStartChat(applicant.studentId); 
-                                      }} 
-                                      className="text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-3 py-1.5 rounded-lg flex items-center"
-                                    >
-                                      <MessageCircle size={14} className="mr-1" /> Chat
-                                    </button>
-                                    <button 
-                                      onClick={(e) => e.stopPropagation()} 
-                                      className="text-xs bg-green-600 hover:bg-green-700 text-white font-bold px-3 py-1.5 rounded-lg"
-                                    >
-                                      Terima
-                                    </button>
-                                  </div>
+                                  )}
                                 </div>
-                              )
-                            )}
+                              );
+                            })}
                           </div>
                         )}
                       </div>
                     )}
                   </div>
-                ))
-              )}
-
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl p-6 flex items-start space-x-4 mt-8">
-                <div className="bg-white p-2.5 rounded-xl shadow-sm text-blue-600 shrink-0">
-                  <MessageCircle size={24} />
-                </div>
-
-                <div>
-                  <h4 className="font-extrabold text-slate-900 text-sm">
-                    Tips Mendapatkan Talenta Terbaik
-                  </h4>
-
-                  <p className="text-xs font-medium text-slate-600 mt-1.5 leading-relaxed">
-                    Saat memposting project,
-                    deskripsikan kebutuhan Anda
-                    sedetail mungkin. Beritahu
-                    referensi agar mahasiswa bisa
-                    mengukur kemampuannya sebelum
-                    melamar.
-                  </p>
-                </div>
+                ))}
               </div>
-            </div>
-          )}
+            )}
+          </div>
+        )}
 
-          {activeTab === 'post' && (
-            <form
-              onSubmit={handlePostSubmit}
-              className="max-w-2xl mx-auto space-y-5"
-            >
-              <h2 className="text-xl font-extrabold text-slate-900 mb-6">
-                Detail Project Baru
-              </h2>
-
+        {activeTab === 'post' && (
+          <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm max-w-2xl">
+            <h2 className="text-2xl font-extrabold text-slate-900 mb-6">Posting Project Baru</h2>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.target);
+              onPostProject({
+                title: formData.get('title'),
+                category: formData.get('category') === 'Custom' ? formData.get('custom_category') : formData.get('category'),
+                budget: formData.get('budget'),
+                deadline: formData.get('deadline') === 'Custom' ? formData.get('custom_deadline') : formData.get('deadline'),
+                desc: formData.get('desc'),
+                tags: formData.get('tags') ? String(formData.get('tags')).split(',').map(s => s.trim()) : [],
+                status: 'open',
+                verified: true,
+                applicants: []
+              });
+              e.target.reset();
+              setActiveTab('project');
+            }} className="space-y-4">
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">
-                  Judul Project
-                </label>
-
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) =>
-                    setTitle(e.target.value)
-                  }
-                  placeholder="Contoh: Pembuatan Logo Toko Kue"
-                  required
-                  className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-green-500 text-sm font-medium"
-                />
+                <label className="block text-sm font-bold text-slate-700 mb-2">Judul Project</label>
+                <input name="title" required type="text" placeholder="Cth: Desain Logo Toko" className="w-full p-3 rounded-xl border border-slate-200" />
               </div>
-
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">
-                  Deskripsi Lengkap
-                </label>
-
-                <textarea
-                  rows="4"
-                  value={desc}
-                  onChange={(e) =>
-                    setDesc(e.target.value)
-                  }
-                  placeholder="Jelaskan secara detail apa yang Anda butuhkan..."
-                  required
-                  className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-green-500 text-sm font-medium"
-                ></textarea>
-              </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">
-                    Budget (Rp)
-                  </label>
-
-                  <input
-                    type="number"
-                    value={budget}
-                    onChange={(e) =>
-                      setBudget(e.target.value)
-                    }
-                    placeholder="150000"
-                    required
-                    className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-green-500 text-sm font-medium"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">
-                    Deadline Pekerjaan
-                  </label>
-
-                  <select
-                    required
-                    value={deadline}
-                    onChange={(e) =>
-                      setDeadline(e.target.value)
-                    }
-                    className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-green-500 text-sm font-medium"
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Kategori</label>
+                  <select 
+                    name="category" 
+                    onChange={e => setIsCustomCategory(e.target.value === 'Custom')}
+                    required={!isCustomCategory} 
+                    className="w-full p-3 rounded-xl border border-slate-200 bg-white mb-2"
                   >
-                    <option value="1-3 Hari">
-                      1-3 Hari
-                    </option>
-
-                    <option value="1 Minggu">
-                      1 Minggu
-                    </option>
-
-                    <option value="2 Minggu">
-                      2 Minggu
-                    </option>
+                    <option value="Desain">Desain</option>
+                    <option value="Pemasaran">Pemasaran</option>
+                    <option value="Administrasi">Administrasi</option>
+                    <option value="Custom">Custom</option>
                   </select>
+                  {isCustomCategory && (
+                    <input name="custom_category" required type="text" placeholder="Masukkan kategori..." className="w-full p-3 rounded-xl border border-slate-200" />
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Budget (Rp)</label>
+                  <input name="budget" required type="number" placeholder="Cth: 150000" className="w-full p-3 rounded-xl border border-slate-200" />
                 </div>
               </div>
-
-              <button
-                type="submit"
-                className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl shadow-md mt-4 transition-colors"
-              >
-                Posting Project Sekarang
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Deadline</label>
+                  <select 
+                    name="deadline" 
+                    onChange={e => setIsCustomDeadline(e.target.value === 'Custom')}
+                    required={!isCustomDeadline} 
+                    className="w-full p-3 rounded-xl border border-slate-200 bg-white mb-2"
+                  >
+                    <option value="1 Hari">1 Hari</option>
+                    <option value="3 Hari">3 Hari</option>
+                    <option value="1 Minggu">1 Minggu</option>
+                    <option value="2 Minggu">2 Minggu</option>
+                    <option value="1 Bulan">1 Bulan</option>
+                    <option value="Custom">Custom</option>
+                  </select>
+                  {isCustomDeadline && (
+                    <input name="custom_deadline" required type="text" placeholder="Masukkan deadline custom... (Cth: 10 Hari)" className="w-full p-3 rounded-xl border border-slate-200" />
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Tags (Pisahkan koma)</label>
+                  <input name="tags" type="text" placeholder="Logo, Figma" className="w-full p-3 rounded-xl border border-slate-200" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Deskripsi Project</label>
+                <textarea name="desc" required rows="4" placeholder="Ceritakan detail project yang ingin dikerjakan..." className="w-full p-3 rounded-xl border border-slate-200"></textarea>
+              </div>
+              <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-xl font-bold transition-all">
+                Posting Project
               </button>
             </form>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
+          </div>
+        )}
 
-function AdminDashboard({ showToast }) {
-  const handleVerify = () => {
-    showToast(
-      'KTM berhasil diverifikasi! Akun mahasiswa telah aktif.',
-      'success'
-    );
-  };
-
-  return (
-    <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-10">
-      <div className="mb-8">
-        <h1 className="text-3xl font-extrabold text-slate-900">
-          Admin Master Control
-        </h1>
-
-        <p className="text-slate-500 mt-2 font-medium">
-          GigSkill System Administration
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
-          <h2 className="text-lg font-extrabold text-slate-900 mb-4 border-b border-slate-100 pb-4">
-            Verifikasi KTM Tertunda (1)
-          </h2>
-
-          <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl">
-            <div className="flex justify-between items-start mb-4">
+        {activeTab === 'profil' && (
+          <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-8">
+              <div className="flex items-center gap-6">
+                <div className="w-24 h-24 bg-green-100 text-green-600 rounded-full flex items-center justify-center text-3xl font-bold">
+                  <Store size={40} />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-extrabold text-slate-900">{currentUser.name}</h2>
+                  <p className="text-slate-500 font-medium">{currentUser.category || 'Kategori Usaha'}</p>
+                  <div className="flex items-center mt-2 space-x-3">
+                    <span className="flex items-center text-xs font-bold text-green-700 bg-green-100 px-2.5 py-1 rounded-md"><CheckCircle2 size={14} className="mr-1" /> Terverifikasi</span>
+                    <span className="text-xs font-bold text-slate-500 flex items-center"><Briefcase size={14} className="mr-1"/> {myProjects.length} Project</span>
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => setShowEditProfile(true)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-6 py-3 rounded-xl transition-colors">
+                Edit Profil
+              </button>
+            </div>
+            
+            <div className="space-y-8 border-t border-slate-100 pt-8">
               <div>
-                <h3 className="font-bold text-slate-900 text-sm">
-                  Siti Aminah
-                </h3>
-
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Universitas Pamulang
-                </p>
+                <h3 className="text-sm font-extrabold text-slate-400 uppercase tracking-wider mb-3">Tentang Usaha</h3>
+                <p className="text-slate-700 leading-relaxed">{currentUser.desc || 'Belum ada deskripsi usaha.'}</p>
               </div>
 
-              <span className="bg-amber-100 text-amber-700 text-[10px] px-2 py-1 rounded font-bold uppercase">
-                Pending
-              </span>
-            </div>
-
-            <div className="h-32 bg-slate-200 rounded-xl mb-4 flex items-center justify-center text-slate-400 border border-dashed border-slate-300">
-              [ Preview Gambar KTM ]
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                onClick={handleVerify}
-                className="flex-1 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-2 rounded-lg transition-colors"
-              >
-                Setujui
-              </button>
-
-              <button
-                onClick={() =>
-                  showToast(
-                    'Pengajuan KTM ditolak.',
-                    'error'
-                  )
-                }
-                className="flex-1 bg-white border border-slate-200 text-red-600 hover:bg-red-50 text-xs font-bold py-2 rounded-lg transition-colors"
-              >
-                Tolak
-              </button>
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-400 uppercase tracking-wider mb-3">Kontak</h3>
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 inline-block">
+                  <p className="text-sm font-bold text-slate-700 flex items-center mb-2"><Phone size={16} className="mr-2 text-slate-400" /> {currentUser.phone || '-'}</p>
+                  <p className="text-sm font-bold text-slate-700 flex items-center"><Mail size={16} className="mr-2 text-slate-400" /> {currentUser.email}</p>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-
-        <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
-          <h2 className="text-lg font-extrabold text-slate-900 mb-4 border-b border-slate-100 pb-4">
-            Verifikasi Pembayaran Manual (0)
-          </h2>
-
-          <div className="h-48 flex flex-col items-center justify-center text-center text-slate-400">
-            <CreditCard
-              size={32}
-              className="mb-2 opacity-50"
-            />
-
-            <p className="text-sm font-medium">
-              Tidak ada transfer masuk yang perlu
-              diverifikasi saat ini.
-            </p>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );
 }
 
-function Footer() {
-  const [activeModal, setActiveModal] =
-    useState(null);
 
-  const [showRedirectConfirm, setShowRedirectConfirm] =
-    useState(false);
-
-  const driveLink =
-    'https://drive.google.com/drive/folders/13lFplnmq2-m36dzozjo5wUHxnc8ozuCT';
-
-  return (
-    <>
-      {activeModal === 'tentang' && (
-        <div 
-          className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
-          onClick={() => setActiveModal(null)}
-        >
-          <div 
-            className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto relative"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex justify-between items-start mb-5 border-b border-slate-100 pb-4">
-              <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-                Tentang Kami
-              </h2>
-
-              <button
-                onClick={() =>
-                  setActiveModal(null)
-                }
-                className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200 hover:text-slate-700 transition-colors"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="text-slate-700 leading-relaxed text-sm">
-              <p>
-                GigSkill adalah platform inovatif yang
-                dirancang khusus untuk menjembatani
-                mahasiswa Universitas Pamulang (UNPAM)
-                dengan Usaha Mikro, Kecil, dan Menengah
-                (UMKM) lokal. Misi kami adalah memberikan
-                pengalaman kerja nyata (micro-credentials)
-                bagi mahasiswa untuk membangun portofolio,
-                sekaligus membantu UMKM melakukan
-                transformasi digital dengan talenta lokal
-                yang terjangkau.
-              </p>
-
-              <div
-                onClick={() =>
-                  setShowRedirectConfirm(true)
-                }
-                className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 text-blue-900 mt-4 cursor-pointer hover:bg-blue-100 transition-colors"
-              >
-                <div className="flex items-center gap-2 mb-3">
-                  <FileText size={18} />
-                  <h3 className="font-extrabold">
-                    Project Tugas Bisnis Plan
-                  </h3>
-                </div>
-
-                <div className="text-sm space-y-1">
-                  <p>
-                    <strong>
-                      Mata Kuliah:
-                    </strong>{' '}
-                    Kewirausahaan
-                  </p>
-
-                  <p className="font-bold mt-3">
-                    Oleh KELOMPOK 7:
-                  </p>
-
-                  <ol className="list-decimal pl-5 space-y-1">
-                    <li>
-                      RIPKI MAULANA — 251010504293
-                    </li>
-
-                    <li>
-                      MUHAMAD SOFIYAN — 251010502197
-                    </li>
-
-                    <li>
-                      FARAH ZAFIRA ROSYADI — 251010502335
-                    </li>
-
-                    <li>
-                      NAJMA NAURA TSABITA — 251010502277
-                    </li>
-                  </ol>
-                </div>
-              </div>
-            </div>
-
-            <button
-              onClick={() =>
-                setActiveModal(null)
-              }
-              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-xl transition-all shadow-md mt-6"
-            >
-              Mengerti & Tutup
-            </button>
-          </div>
-        </div>
-      )}
-
-      {activeModal === 'panduan' && (
-        <div 
-          className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
-          onClick={() => setActiveModal(null)}
-        >
-          <div 
-            className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto relative"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex justify-between items-start mb-5 border-b border-slate-100 pb-4">
-              <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-                Panduan Penggunaan
-              </h2>
-
-              <button
-                onClick={() =>
-                  setActiveModal(null)
-                }
-                className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="text-slate-700 leading-relaxed text-sm mb-8">
-              <ul className="list-decimal pl-5 space-y-3">
-                <li>
-                  <strong>Pendaftaran:</strong> Buat
-                  akun sebagai Mahasiswa (wajib
-                  melampirkan KTM) atau sebagai UMKM.
-                </li>
-
-                <li>
-                  <strong>Eksplorasi & Posting:</strong>{' '}
-                  Mahasiswa dapat mencari project. UMKM
-                  dapat memposting kebutuhan mereka.
-                </li>
-
-                <li>
-                  <strong>Proses Lamaran:</strong>{' '}
-                  Mahasiswa mengirim lamaran, UMKM
-                  memilih kandidat.
-                </li>
-
-                <li>
-                  <strong>Pengerjaan:</strong> Kerjakan
-                  project sesuai dengan kesepakatan
-                  tenggat waktu.
-                </li>
-
-                <li>
-                  <strong>Selesai:</strong> Setelah
-                  disetujui, mahasiswa akan mendapatkan
-                  ulasan.
-                </li>
-              </ul>
-            </div>
-
-            <button
-              onClick={() =>
-                setActiveModal(null)
-              }
-              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-xl transition-all shadow-md"
-            >
-              Mengerti & Tutup
-            </button>
-          </div>
-        </div>
-      )}
-
-      {activeModal === 'syarat' && (
-        <div 
-          className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
-          onClick={() => setActiveModal(null)}
-        >
-          <div 
-            className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto relative"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex justify-between items-start mb-5 border-b border-slate-100 pb-4">
-              <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-                Syarat & Ketentuan
-              </h2>
-
-              <button
-                onClick={() =>
-                  setActiveModal(null)
-                }
-                className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="text-slate-700 leading-relaxed text-sm mb-8 space-y-3">
-              <p>
-                1. <strong>Verifikasi:</strong>{' '}
-                Mahasiswa wajib melampirkan KTM aktif.
-                UMKM harus memberi data valid.
-              </p>
-
-              <p>
-                2. <strong>Kewajiban:</strong> UMKM
-                wajib memberikan deskripsi tugas dan
-                besaran budget yang jelas.
-              </p>
-
-              <p>
-                3. <strong>Transaksi:</strong> Segala
-                bentuk transaksi keuangan di luar
-                pantauan platform bukan tanggung jawab
-                kami.
-              </p>
-
-              <p>
-                4. <strong>Sanksi:</strong> GigSkill
-                berhak memblokir akun yang terindikasi
-                melakukan pelanggaran.
-              </p>
-            </div>
-
-            <button
-              onClick={() =>
-                setActiveModal(null)
-              }
-              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-xl transition-all shadow-md"
-            >
-              Mengerti & Tutup
-            </button>
-          </div>
-        </div>
-      )}
-
-      {showRedirectConfirm && (
-        <div 
-          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4"
-          onClick={() => setShowRedirectConfirm(false)}
-        >
-          <div 
-            className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl text-center max-h-[90vh] overflow-y-auto relative"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-5">
-              <FileText size={32} />
-            </div>
-
-            <h3 className="text-xl font-extrabold text-slate-900 mb-2">
-              Buka Makalah Project?
-            </h3>
-
-            <p className="text-slate-500 text-sm mb-6 leading-relaxed">
-              Anda akan diarahkan ke tab baru
-              (Google Drive) untuk melihat isi dokumen
-              makalah dari project GigSkill ini.
-            </p>
-
-            <div className="flex gap-3">
-              <button
-                onClick={() =>
-                  setShowRedirectConfirm(false)
-                }
-                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-xl transition-colors"
-              >
-                Batal
-              </button>
-
-              <button
-                onClick={() => {
-                  window.open(
-                    driveLink,
-                    '_blank'
-                  );
-                  setShowRedirectConfirm(false);
-                }}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-colors shadow-md flex items-center justify-center gap-2"
-              >
-                Ya, Buka
-                <ArrowRight size={16} />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <footer className="bg-slate-900 py-12 mt-auto">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-6 text-sm">
-          <div className="flex flex-col items-center md:items-start">
-            <span className="text-white font-extrabold text-2xl tracking-tight mb-1">
-              Gig<span className="text-blue-500">Skill</span>
-            </span>
-
-            <span className="text-slate-400 font-medium text-xs">
-              Empowering Students & Local Businesses.
-            </span>
-          </div>
-
-          <div className="flex flex-wrap justify-center space-x-6 font-bold text-slate-400">
-            <button
-              onClick={() =>
-                setActiveModal('tentang')
-              }
-              className="hover:text-white transition-colors"
-            >
-              Tentang Kami
-            </button>
-
-            <button
-              onClick={() =>
-                setActiveModal('panduan')
-              }
-              className="hover:text-white transition-colors"
-            >
-              Panduan
-            </button>
-
-            <button
-              onClick={() =>
-                setActiveModal('syarat')
-              }
-              className="hover:text-white transition-colors"
-            >
-              Syarat & Ketentuan
-            </button>
-          </div>
-
-          <div className="text-slate-500 font-medium text-xs">
-            &copy; 2026 GigSkill.web.id Platform
-          </div>
-        </div>
-      </footer>
-    </>
-  );
-}
-function DompetView({ role }) {
-  const [showModal, setShowModal] = useState(null);
-  const [amount, setAmount] = useState('');
+function DompetView({ role, currentUser, onRequestTransaction, transactions }) {
+  const [showModal, setShowModal] = React.useState(null);
+  const [amount, setAmount] = React.useState('');
+  const [accountDetail, setAccountDetail] = React.useState('');
+  const myTransactions = transactions.filter(t => t.userId === currentUser.id);
 
   const formatRupiah = (angka) => {
     return new Intl.NumberFormat('id-ID', {
@@ -2364,9 +2097,11 @@ function DompetView({ role }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    alert(`Permintaan ${showModal === 'topup' ? 'Top Up' : 'Penarikan'} sebesar ${formatRupiah(amount)} berhasil diajukan dan menunggu konfirmasi admin.`);
-    setShowModal(null);
+    if (!amount || !accountDetail) return;
+    onRequestTransaction(role === 'umkm' ? 'topup' : 'withdraw', amount, accountDetail);
     setAmount('');
+    setAccountDetail('');
+    setShowModal(null);
   };
 
   return (
@@ -2376,7 +2111,7 @@ function DompetView({ role }) {
           <DollarSign size={120} />
         </div>
         <p className="text-slate-400 font-bold mb-2">Total Saldo Aktif</p>
-        <h2 className="text-4xl md:text-5xl font-extrabold mb-8">{formatRupiah(0)}</h2>
+        <h2 className="text-4xl md:text-5xl font-extrabold mb-8">{formatRupiah(currentUser.balance || 0)}</h2>
         <div className="flex gap-4 relative z-10">
           {role === 'umkm' && (
             <button
@@ -2405,10 +2140,26 @@ function DompetView({ role }) {
           Riwayat Transaksi
         </h3>
         
-        <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-          <CreditCard size={40} className="mx-auto text-slate-300 mb-3" />
-          <p className="text-slate-500 font-medium">Belum ada riwayat transaksi.</p>
-        </div>
+        {myTransactions.length === 0 ? (
+          <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+            <CreditCard size={40} className="mx-auto text-slate-300 mb-3" />
+            <p className="text-slate-500 font-medium">Belum ada riwayat transaksi.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {myTransactions.map(tx => (
+              <div key={tx.id} className="p-4 bg-slate-50 border border-slate-100 rounded-2xl flex justify-between items-center">
+                <div>
+                  <p className="font-bold text-slate-900">{tx.type === 'topup' ? 'Top Up' : 'Withdraw'} <span className="text-xs bg-slate-200 px-2 rounded-full">{tx.status}</span></p>
+                  <p className="text-xs text-slate-500">{tx.date}</p>
+                </div>
+                <p className={`font-extrabold ${tx.type === 'topup' ? 'text-blue-600' : 'text-slate-700'}`}>
+                   {tx.type === 'withdraw' ? '-' : '+'} Rp {Number(tx.amount).toLocaleString('id-ID')}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {showModal && (
@@ -2422,7 +2173,7 @@ function DompetView({ role }) {
                 <X size={20} />
               </button>
             </div>
-
+            
             {showModal === 'topup' ? (
               <div className="mb-6 p-4 bg-amber-50 rounded-xl border border-amber-200 text-sm text-amber-800">
                 <p className="font-bold mb-1">Transfer Manual</p>
@@ -2450,34 +2201,24 @@ function DompetView({ role }) {
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
-
-              {showModal === 'topup' && (
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-2">Bukti Transfer (Opsional)</label>
-                  <input
-                    type="file"
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
-                  />
-                </div>
-              )}
-
-              {showModal === 'withdraw' && (
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-2">Rekening Tujuan / E-Wallet</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Contoh: BCA 987654321 a/n Budi"
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              )}
-
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">
+                  {showModal === 'topup' ? 'Rekening Anda' : 'Rekening Tujuan'}
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={accountDetail}
+                  onChange={(e) => setAccountDetail(e.target.value)}
+                  placeholder="BCA 123456 a/n Joko"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
               <button
                 type="submit"
-                className={`w-full py-3.5 mt-2 rounded-xl font-bold text-white transition-all ${showModal === 'topup' ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3.5 rounded-xl font-bold transition-all shadow-md"
               >
-                Kirim Permintaan
+                Ajukan {showModal === 'topup' ? 'Top Up' : 'Penarikan'}
               </button>
             </form>
           </div>
@@ -2486,176 +2227,344 @@ function DompetView({ role }) {
     </div>
   );
 }
-function ChatView({ currentUser, users, role, messages, setMessages, initialActiveChat }) {
-  const [activeChat, setActiveChat] = useState(initialActiveChat || null);
-  const [newMessage, setNewMessage] = useState('');
 
-  React.useEffect(() => {
-    if (initialActiveChat) {
-      setActiveChat(initialActiveChat);
-    }
-  }, [initialActiveChat]);
+function AdminDashboard({ showToast, users, setUsers, projects, setProjects, transactions, setTransactions }) {
+  const [activeTab, setActiveTab] = React.useState('verifikasi');
 
-  // Generate chat list based on messages object
-  const chatList = [];
-  Object.keys(messages).forEach(chatId => {
-    const parts = chatId.split('_');
-    if (parts.length === 3 && parts[0] === 'chat') {
-      const studentId = parts[1];
-      const umkmId = parts[2];
-      
-      let partnerId = null;
-      if (role === 'student' && currentUser.id === studentId) {
-        partnerId = umkmId;
-      } else if (role === 'umkm' && currentUser.id === umkmId) {
-        partnerId = studentId;
+  const pendingStudents = users.filter(u => u.role === 'student' && !u.verified);
+  const pendingUMKMs = users.filter(u => u.role === 'umkm' && !u.verified);
+  const pendingTransactions = transactions.filter(t => t.status === 'Menunggu');
+  const bandingProjects = projects.filter(p => p.status === 'Banding Berlangsung');
+
+  const handleVerifyUser = (userId, isApproved) => {
+    setUsers(prev => prev.map(u => {
+      if (u.id === userId) {
+        return { ...u, verified: isApproved, verificationStatus: isApproved ? 'Approved' : 'Rejected' };
       }
-      
-      if (partnerId) {
-        const partner = users.find(u => u.id === partnerId);
-        const chatMessages = messages[chatId] || [];
-        const lastMsg = chatMessages[chatMessages.length - 1];
-        chatList.push({
-          id: chatId,
-          partnerId: partnerId,
-          partnerName: partner ? partner.name : 'Unknown User',
-          lastMessage: lastMsg ? lastMsg.text : 'Belum ada pesan',
-          unread: 0
-        });
-      }
-    }
-  });
-
-  // If initialActiveChat is provided but not in chatList yet, add a placeholder
-  if (initialActiveChat && !chatList.find(c => c.id === initialActiveChat)) {
-    const parts = initialActiveChat.split('_');
-    const partnerId = role === 'student' ? parts[2] : parts[1];
-    const partner = users.find(u => u.id === partnerId);
-    chatList.push({
-      id: initialActiveChat,
-      partnerId: partnerId,
-      partnerName: partner ? partner.name : 'Unknown User',
-      lastMessage: 'Belum ada pesan',
-      unread: 0
-    });
-  }
-
-  const handleSendMessage = (e) => {
-    e.preventDefault();
-    if (!newMessage.trim() || !activeChat) return;
-
-    const newMsg = {
-      id: Date.now(),
-      senderId: currentUser.id,
-      text: newMessage,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-
-    setMessages(prev => ({
-      ...prev,
-      [activeChat]: [...(prev[activeChat] || []), newMsg]
+      return u;
     }));
-    setNewMessage('');
+    showToast(isApproved ? 'Verifikasi disetujui.' : 'Verifikasi ditolak.');
+  };
+
+  const handleVerifyTransaction = (txId, isApproved) => {
+    const tx = transactions.find(t => t.id === txId);
+    if (!tx) return;
+    
+    setTransactions(prev => prev.map(t => {
+      if (t.id === txId) return { ...t, status: isApproved ? 'Disetujui' : 'Ditolak' };
+      return t;
+    }));
+
+    if (isApproved) {
+      setUsers(prev => prev.map(u => {
+        if (u.id === tx.userId) {
+          const change = tx.type === 'withdraw' ? -Number(tx.amount) : Number(tx.amount);
+          return { ...u, balance: (u.balance || 0) + change };
+        }
+        return u;
+      }));
+    }
+    showToast(isApproved ? 'Transaksi disetujui.' : 'Transaksi ditolak.');
+  };
+
+  const handleMediation = (projectId, winner) => {
+    setProjects(prev => prev.map(p => {
+      if (p.id === projectId) {
+        if (winner === 'student') {
+          // Add balance to student
+          setUsers(usersList => usersList.map(u => {
+            if (p.applicants.some(a => a.status === 'Diterima' && a.studentId === u.id)) {
+              return { ...u, balance: (u.balance || 0) + Number(p.budget) };
+            }
+            if (u.id === p.umkmId) {
+              return { ...u, balance: (u.balance || 0) - Number(p.budget) };
+            }
+            return u;
+          }));
+        }
+        return { 
+          ...p, 
+          status: 'Selesai',
+          banding: {
+            ...p.banding,
+            status: winner === 'student' ? 'Dimenangkan Mahasiswa' : 'Dimenangkan UMKM'
+          }
+        };
+      }
+      return p;
+    }));
+    showToast(`Mediasi selesai. ${winner === 'student' ? 'Mahasiswa' : 'UMKM'} memenangkan banding.`);
   };
 
   return (
-    <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden flex h-[600px]">
-      {/* Chat List - Sidebar */}
-      <div className={`w-full md:w-1/3 border-r border-slate-100 flex flex-col ${activeChat ? 'hidden md:flex' : 'flex'}`}>
-        <div className="p-4 border-b border-slate-100 bg-slate-50">
-          <h3 className="font-extrabold text-slate-900">Pesan Masuk</h3>
+    <div className="flex-1 bg-slate-50 p-6 md:p-10 min-h-screen">
+      <div className="max-w-7xl mx-auto space-y-6">
+        <div className="flex items-center gap-3 mb-8">
+          <ShieldCheck size={32} className="text-blue-600" />
+          <h2 className="text-2xl font-extrabold text-slate-900">Admin GigSkill Dashboard</h2>
         </div>
-        <div className="flex-1 overflow-y-auto">
-          {chatList.map((chat) => (
-            <div 
-              key={chat.id} 
-              onClick={() => setActiveChat(chat.id)}
-              className={`p-4 border-b border-slate-50 cursor-pointer transition-colors hover:bg-slate-50 flex items-start gap-3 ${activeChat === chat.id ? 'bg-blue-50/50' : ''}`}
+
+        <div className="flex gap-2 overflow-x-auto pb-4 hide-scrollbar">
+          {['verifikasi', 'keuangan', 'moderasi'].map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-6 py-3 rounded-full font-bold text-sm capitalize whitespace-nowrap transition-all ${activeTab === tab ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 hover:bg-slate-200 border border-slate-200'}`}
             >
-              <div className="w-10 h-10 rounded-full bg-slate-200 flex-shrink-0 flex items-center justify-center text-slate-500 font-bold">
-                {chat.partnerName.charAt(0)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex justify-between items-center mb-1">
-                  <h4 className="font-bold text-slate-900 truncate text-sm">{chat.partnerName}</h4>
-                  {chat.unread > 0 && (
-                    <span className="bg-blue-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-                      {chat.unread}
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-slate-500 truncate">{chat.lastMessage}</p>
-              </div>
-            </div>
+              {tab === 'verifikasi' ? 'Verifikasi Akun' : tab === 'keuangan' ? 'Transaksi Keuangan' : 'Mediasi / Banding'}
+            </button>
           ))}
         </div>
-      </div>
 
-      {/* Chat Area */}
-      <div className={`w-full md:w-2/3 flex flex-col ${!activeChat ? 'hidden md:flex' : 'flex'}`}>
+        {activeTab === 'verifikasi' && (
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+              <h3 className="text-lg font-extrabold text-slate-900 mb-4">Verifikasi Mahasiswa (KTM)</h3>
+              {pendingStudents.length === 0 ? <p className="text-sm text-slate-500">Tidak ada permintaan.</p> : pendingStudents.map(u => (
+                <div key={u.id} className="p-4 bg-slate-50 border border-slate-100 rounded-xl mb-3">
+                  <p className="font-bold text-slate-800">{u.name}</p>
+                  <p className="text-xs text-slate-500">{u.univ}</p>
+                  <div className="my-2 p-2 bg-slate-200 text-xs text-center rounded text-slate-500 italic">[Mockup KTM Image]</div>
+                  <div className="flex gap-2 mt-3">
+                    <button onClick={() => handleVerifyUser(u.id, false)} className="flex-1 text-xs font-bold bg-white text-red-600 border border-red-200 py-2 rounded-lg hover:bg-red-50">Tolak</button>
+                    <button onClick={() => handleVerifyUser(u.id, true)} className="flex-1 text-xs font-bold bg-green-600 text-white py-2 rounded-lg hover:bg-green-700">Setujui</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+              <h3 className="text-lg font-extrabold text-slate-900 mb-4">Verifikasi UMKM</h3>
+              {pendingUMKMs.length === 0 ? <p className="text-sm text-slate-500">Tidak ada permintaan.</p> : pendingUMKMs.map(u => (
+                <div key={u.id} className="p-4 bg-slate-50 border border-slate-100 rounded-xl mb-3">
+                  <p className="font-bold text-slate-800">{u.name}</p>
+                  <p className="text-xs text-slate-500">{u.category} - {u.phone}</p>
+                  <div className="flex gap-2 mt-3">
+                    <button onClick={() => handleVerifyUser(u.id, false)} className="flex-1 text-xs font-bold bg-white text-red-600 border border-red-200 py-2 rounded-lg hover:bg-red-50">Tolak</button>
+                    <button onClick={() => handleVerifyUser(u.id, true)} className="flex-1 text-xs font-bold bg-green-600 text-white py-2 rounded-lg hover:bg-green-700">Setujui</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'keuangan' && (
+          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+            <h3 className="text-lg font-extrabold text-slate-900 mb-4">Permintaan Transaksi</h3>
+            {pendingTransactions.length === 0 ? <p className="text-sm text-slate-500">Tidak ada transaksi tertunda.</p> : pendingTransactions.map(tx => (
+              <div key={tx.id} className="p-4 bg-slate-50 border border-slate-100 rounded-xl mb-3 flex flex-col md:flex-row justify-between items-center gap-4">
+                <div>
+                  <p className="font-bold text-slate-800">{tx.type === 'topup' ? 'Top Up' : 'Withdraw'}</p>
+                  <p className="text-sm text-slate-600">{tx.userName} ({tx.userRole})</p>
+                  <p className="text-xs text-slate-500 mt-1">Metode/Rek: {tx.accountDetails}</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-extrabold text-blue-600 text-lg mb-2">Rp {tx.amount.toLocaleString('id-ID')}</p>
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={() => handleVerifyTransaction(tx.id, false)} className="text-xs font-bold bg-white text-red-600 border border-red-200 px-4 py-2 rounded-lg hover:bg-red-50">Tolak</button>
+                    <button onClick={() => handleVerifyTransaction(tx.id, true)} className="text-xs font-bold bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700">Setujui</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {activeTab === 'moderasi' && (
+          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+            <h3 className="text-lg font-extrabold text-slate-900 mb-4">Mediasi Banding Sengketa</h3>
+            {bandingProjects.length === 0 ? <p className="text-sm text-slate-500">Tidak ada kasus banding.</p> : bandingProjects.map(p => (
+              <div key={p.id} className="p-4 border border-purple-200 rounded-2xl mb-4">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h4 className="font-extrabold text-slate-900">{p.title}</h4>
+                    <p className="text-xs text-slate-500">UMKM: {p.umkmName} | Mahasiswa: {p.applicants.find(a=>a.status === 'Diterima')?.studentName}</p>
+                  </div>
+                  <p className="font-bold text-green-700">Rp {Number(p.budget).toLocaleString('id-ID')}</p>
+                </div>
+                <div className="grid md:grid-cols-2 gap-4 mb-4">
+                  <div className="bg-red-50 p-4 rounded-xl">
+                    <p className="text-xs font-bold text-red-700 mb-1">Alasan Penolakan UMKM:</p>
+                    <p className="text-sm text-red-600 italic">"{p.banding.reason}"</p>
+                  </div>
+                  <div className="bg-blue-50 p-4 rounded-xl">
+                    <p className="text-xs font-bold text-blue-700 mb-1">Tanggapan Mahasiswa:</p>
+                    <p className="text-sm text-blue-600 italic">"{p.banding.studentResponse}"</p>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2">
+                   <button onClick={() => handleMediation(p.id, 'umkm')} className="text-xs font-bold bg-white text-slate-600 border border-slate-300 px-4 py-2 rounded-lg hover:bg-slate-100">Menangkan UMKM (Dana Kembali)</button>
+                   <button onClick={() => handleMediation(p.id, 'student')} className="text-xs font-bold bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">Menangkan Mahasiswa (Teruskan Pembayaran)</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ChatView({ currentUser, users, role, messages, setMessages, initialActiveChat, activeChatContext, projects, setActiveChatContext }) {
+  const [activeChat, setActiveChat] = React.useState(initialActiveChat);
+  const [messageText, setMessageText] = React.useState('');
+
+  const chatPartners = users.filter(u => u.id !== currentUser.id && (role === 'admin' || (role === 'student' && u.role === 'umkm') || (role === 'umkm' && u.role === 'student')));
+
+  const handleSendMessage = (e) => {
+    e.preventDefault();
+    if (!messageText.trim() || !activeChat) return;
+    const newMsg = {
+      id: 'm_' + Date.now(),
+      chatId: activeChat,
+      senderId: currentUser.id,
+      text: messageText,
+      timestamp: new Date().toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'})
+    };
+    setMessages(prev => [...prev, newMsg]);
+    setMessageText('');
+  };
+
+  const getPartnerId = (chatId) => {
+    if (!chatId) return null;
+    const parts = chatId.split('_');
+    return parts[1] === currentUser.id ? parts[2] : parts[1];
+  };
+  const activePartner = activeChat ? users.find(u => u.id === getPartnerId(activeChat)) : null;
+  const activeMessages = messages.filter(m => m.chatId === activeChat);
+
+  return (
+    <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden flex h-[600px]">
+      <div className="w-1/3 border-r border-slate-200 flex flex-col bg-slate-50">
+        <div className="p-4 border-b border-slate-200">
+          <h2 className="font-extrabold text-slate-800">Pesan</h2>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {chatPartners.map(partner => {
+            const studentId = currentUser.role === 'student' ? currentUser.id : partner.id;
+            const umkmId = currentUser.role === 'umkm' ? currentUser.id : partner.id;
+            const chatId = `chat_${studentId}_${umkmId}`;
+            const lastMsg = messages.filter(m => m.chatId === chatId).pop();
+            return (
+              <div key={partner.id} onClick={() => setActiveChat(chatId)} className={`p-4 border-b border-slate-100 cursor-pointer hover:bg-white transition-colors ${activeChat === chatId ? 'bg-white border-l-4 border-l-blue-600' : ''}`}>
+                <div className="flex justify-between items-center mb-1">
+                  <span className="font-bold text-slate-800 truncate">{partner.name}</span>
+                  {lastMsg && <span className="text-xs text-slate-400">{lastMsg.timestamp}</span>}
+                </div>
+                <p className="text-sm text-slate-500 truncate">{lastMsg ? lastMsg.text : 'Belum ada pesan'}</p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div className="flex-1 flex flex-col">
         {activeChat ? (
           <>
-            <div className="p-4 border-b border-slate-100 bg-white flex items-center gap-3">
-              <button 
-                onClick={() => setActiveChat(null)}
-                className="md:hidden p-2 -ml-2 text-slate-500 hover:bg-slate-100 rounded-full"
-              >
-                <ArrowRight size={20} className="rotate-180" />
-              </button>
-              <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex-shrink-0 flex items-center justify-center font-bold">
-                {chatList.find(c => c.id === activeChat)?.partnerName.charAt(0)}
-              </div>
-              <div>
-                <h3 className="font-bold text-slate-900">{chatList.find(c => c.id === activeChat)?.partnerName}</h3>
-                <p className="text-xs text-slate-500">Online</p>
+            <div className="p-4 border-b border-slate-200 bg-white flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 font-bold">
+                  {activePartner?.name.charAt(0)}
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-800">{activePartner?.name}</h3>
+                  <p className="text-xs text-slate-500">{activePartner?.role === 'student' ? 'Mahasiswa' : 'UMKM'}</p>
+                </div>
               </div>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-4 bg-slate-50/50 space-y-4">
-              {(messages[activeChat] || []).map((msg) => {
-                const isMe = msg.senderId === currentUser.id;
-                return (
-                  <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[75%] rounded-2xl px-4 py-2 ${isMe ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-white border border-slate-200 text-slate-700 rounded-tl-none shadow-sm'}`}>
-                      <p className="text-sm">{msg.text}</p>
-                      <p className={`text-[10px] mt-1 text-right ${isMe ? 'text-blue-200' : 'text-slate-400'}`}>
-                        {msg.time}
-                      </p>
-                    </div>
+            {activeChatContext && (
+              <div className="bg-blue-50 border-b border-blue-100 p-4 relative">
+                <button onClick={() => setActiveChatContext(null)} className="absolute top-2 right-2 text-blue-400 hover:text-blue-700">
+                  <X size={16} />
+                </button>
+                <div className="flex gap-2">
+                  <div className="text-xs">
+                    {(() => {
+                      const ctxProject = projects.find(p => p.id === activeChatContext);
+                      if (!ctxProject) return null;
+                      const applicant = ctxProject.applicants.find(a => a.studentId === currentUser.id || a.studentId === activePartner?.id);
+                      const status = applicant ? applicant.status : ctxProject.status;
+                      return (
+                        <>
+                          <p className="font-bold text-blue-900 mb-1">📋 Konteks Project</p>
+                          <p className="text-blue-800">{ctxProject.title}</p>
+                          <p className="text-blue-700">{ctxProject.umkmName}</p>
+                          <p className="font-bold text-blue-900 mt-1">Rp {Number(ctxProject.budget).toLocaleString('id-ID')}</p>
+                          <p className="text-blue-600 mt-1">Status: <span className="font-bold">{ctxProject.status === 'Selesai' ? 'Selesai' : status}</span></p>
+                        </>
+                      )
+                    })()}
                   </div>
-                );
-              })}
+                </div>
+              </div>
+            )}
+            
+            <div className="flex-1 overflow-y-auto p-4 bg-slate-50/50 space-y-4">
+              {activeMessages.map(msg => (
+                <div key={msg.id} className={`flex ${msg.senderId === currentUser.id ? 'justify-end' : 'justify-start'}`}>
+                  {msg.isContext ? (
+                    <div className="bg-amber-50 border border-amber-200 p-3 rounded-2xl max-w-[80%] text-sm text-amber-900 shadow-sm whitespace-pre-wrap">
+                      {msg.text}
+                      <p className="text-[10px] text-amber-700 mt-2 text-right">{msg.timestamp}</p>
+                    </div>
+                  ) : (
+                    <div className={`max-w-[70%] p-3 rounded-2xl shadow-sm text-sm ${msg.senderId === currentUser.id ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-white border border-slate-200 text-slate-800 rounded-tl-none'}`}>
+                      {msg.text}
+                      <p className={`text-[10px] mt-1 text-right ${msg.senderId === currentUser.id ? 'text-blue-200' : 'text-slate-400'}`}>{msg.timestamp}</p>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
-
-            <div className="p-4 bg-white border-t border-slate-100">
+            <div className="p-4 bg-white border-t border-slate-200">
               <form onSubmit={handleSendMessage} className="flex gap-2">
-                <input 
-                  type="text" 
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  placeholder="Ketik pesan..." 
-                  className="flex-1 bg-slate-100 border-transparent focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-xl px-4 py-2.5 text-sm transition-all"
+                <input
+                  type="text"
+                  value={messageText}
+                  onChange={(e) => setMessageText(e.target.value)}
+                  placeholder="Tulis pesan..."
+                  className="flex-1 px-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 bg-slate-50"
                 />
-                <button 
-                  type="submit"
-                  disabled={!newMessage.trim()}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white rounded-xl px-4 py-2.5 transition-all flex items-center justify-center"
-                >
-                  <MessageCircle size={18} />
+                <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold hover:bg-blue-700 transition-colors flex items-center justify-center">
+                  <Send size={18} />
                 </button>
               </form>
             </div>
           </>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-8 text-center">
-            <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-4">
-              <MessageCircle size={40} className="text-slate-300" />
-            </div>
-            <p className="font-bold text-slate-500">Pilih pesan untuk mulai mengobrol</p>
-            <p className="text-sm mt-1">Diskusikan detail project sebelum membuat kesepakatan.</p>
+          <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
+            <MessageCircle size={48} className="mb-4 text-slate-200" />
+            <p className="font-medium">Pilih pesan untuk mulai mengobrol</p>
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+
+
+function Footer({ onOpenPopup }) {
+  return (
+    <footer className="bg-[#0f172a] text-slate-400 py-12 px-6 md:px-12 border-t border-slate-800 mt-auto">
+      <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+        <div className="text-left flex flex-col items-center md:items-start">
+          <h2 className="text-2xl font-extrabold text-white tracking-tight flex items-center">
+            Gig<span className="text-blue-500">Skill</span>
+          </h2>
+          <p className="text-xs text-slate-400 mt-1">Empowering Students & Local Businesses.</p>
+        </div>
+        
+        <div className="flex items-center space-x-6 text-sm font-bold text-slate-300">
+          <button onClick={() => onOpenPopup('tentang')} className="hover:text-blue-400 transition-colors">Tentang Kami</button>
+          <button onClick={() => onOpenPopup('panduan')} className="hover:text-blue-400 transition-colors">Panduan</button>
+          <button onClick={() => onOpenPopup('syarat')} className="hover:text-blue-400 transition-colors">Syarat & Ketentuan</button>
+        </div>
+
+        <div className="text-sm font-medium text-slate-500">
+          &copy; 2026 GigSkill.web.id Platform
+        </div>
+      </div>
+    </footer>
   );
 }
