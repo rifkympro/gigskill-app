@@ -1918,7 +1918,7 @@ function Footer() {
                     <strong>
                       Mata Kuliah:
                     </strong>{' '}
-                    Manajemen Pemasaran
+                    Kewirausahaan
                   </p>
 
                   <p className="font-bold mt-3">
