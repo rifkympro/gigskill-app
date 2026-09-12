@@ -79,10 +79,25 @@ const initialProjects = [
   }
 ];
 
+const initialMessages = {
+  'chat_u1_u2': [
+    { id: 1, senderId: 'u1', text: 'Halo kak, saya tertarik dengan project desain logo yang diposting. Boleh saya tanya-tanya?', time: '10:00' },
+    { id: 2, senderId: 'u2', text: 'Halo Joko! Boleh, silakan, mau tanya apa?', time: '10:05' },
+  ]
+};
+
 export default function App() {
   const [currentPage, setCurrentPage] = useState('landing');
   const [users, setUsers] = useState(initialUsers);
   const [projects, setProjects] = useState(initialProjects);
+  const [messages, setMessages] = React.useState(() => {
+    const saved = localStorage.getItem('gigskill_messages');
+    return saved ? JSON.parse(saved) : initialMessages;
+  });
+
+  React.useEffect(() => {
+    localStorage.setItem('gigskill_messages', JSON.stringify(messages));
+  }, [messages]);
   const [currentUser, setCurrentUser] = useState(null);
   const [toast, setToast] = useState({
     show: false,
@@ -288,8 +303,11 @@ export default function App() {
           currentUser?.role === 'student' && (
             <StudentDashboard
               currentUser={currentUser}
+              users={users}
               projects={projects}
               onApply={handleApplyProject}
+              messages={messages}
+              setMessages={setMessages}
             />
           )}
 
@@ -297,8 +315,11 @@ export default function App() {
           currentUser?.role === 'umkm' && (
             <UMKMDashboard
               currentUser={currentUser}
+              users={users}
               projects={projects}
               onPostProject={handlePostProject}
+              messages={messages}
+              setMessages={setMessages}
             />
           )}
 
@@ -994,11 +1015,21 @@ function LoginPage({
 
 function StudentDashboard({
   currentUser,
+  users,
   projects,
-  onApply
+  onApply,
+  messages,
+  setMessages
 }) {
   const [activeTab, setActiveTab] =
     useState('cari');
+  const [activeChatId, setActiveChatId] = useState(null);
+
+  const handleStartChat = (umkmId) => {
+    setActiveChatId(`chat_${currentUser.id}_${umkmId}`);
+    setActiveTab('pesan');
+    setSelectedProject(null);
+  };
 
   const [selectedProject, setSelectedProject] =
     useState(null);
@@ -1094,12 +1125,20 @@ function StudentDashboard({
               </div>
             </div>
 
-            <button
-              onClick={handleApplyClick}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-xl font-bold transition-all"
-            >
-              Kirim Lamaran Saya
-            </button>
+            <div className="flex gap-3">
+              <button
+                onClick={handleApplyClick}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-xl font-bold transition-all"
+              >
+                Kirim Lamaran
+              </button>
+              <button
+                onClick={() => handleStartChat(selectedProject.umkmId)}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-6 py-3.5 rounded-xl font-bold transition-all border border-slate-200 flex items-center justify-center"
+              >
+                <MessageCircle size={20} />
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1199,10 +1238,55 @@ function StudentDashboard({
               <User size={18} />
               <span>Profil & Portfolio</span>
             </button>
+
+            <button
+              onClick={() =>
+                setActiveTab('dompet')
+              }
+              className={
+                'w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all ' +
+                (activeTab === 'dompet'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-slate-600 hover:bg-slate-100')
+              }
+            >
+              <CreditCard size={18} />
+              <span>Dompet Saya</span>
+            </button>
+
+            <button
+              onClick={() =>
+                setActiveTab('pesan')
+              }
+              className={
+                'w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all ' +
+                (activeTab === 'pesan'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-slate-600 hover:bg-slate-100')
+              }
+            >
+              <MessageCircle size={18} />
+              <span>Pesan</span>
+            </button>
           </div>
         </div>
 
         <div className="flex-1">
+          {activeTab === 'dompet' && (
+            <DompetView role="student" />
+          )}
+
+          {activeTab === 'pesan' && (
+            <ChatView 
+              currentUser={currentUser} 
+              users={users} 
+              role="student" 
+              messages={messages} 
+              setMessages={setMessages} 
+              initialActiveChat={activeChatId}
+            />
+          )}
+
           {activeTab === 'cari' && (
             <div className="space-y-6">
               <div className="bg-white p-2 rounded-2xl shadow-sm border border-slate-200 flex items-center">
@@ -1415,11 +1499,20 @@ function StudentDashboard({
 
 function UMKMDashboard({
   currentUser,
+  users,
   projects,
-  onPostProject
+  onPostProject,
+  messages,
+  setMessages
 }) {
   const [activeTab, setActiveTab] =
     useState('project');
+  const [activeChatId, setActiveChatId] = useState(null);
+
+  const handleStartChat = (studentId) => {
+    setActiveChatId(`chat_${studentId}_${currentUser.id}`);
+    setActiveTab('pesan');
+  };
 
   const [expandedProject, setExpandedProject] =
     useState(null);
@@ -1506,9 +1599,50 @@ function UMKMDashboard({
           >
             Buat Posting Baru
           </button>
+          
+          <button
+            onClick={() => setActiveTab('dompet')}
+            className={
+              'px-6 py-4 font-bold text-sm border-b-2 transition-colors flex items-center ' +
+              (activeTab === 'dompet'
+                ? 'border-green-600 text-green-700 bg-green-50/50'
+                : 'border-transparent text-slate-500 hover:bg-slate-50')
+            }
+          >
+            <CreditCard size={18} className="mr-2" />
+            Dompet Saya
+          </button>
+          
+          <button
+            onClick={() => setActiveTab('pesan')}
+            className={
+              'px-6 py-4 font-bold text-sm border-b-2 transition-colors flex items-center ' +
+              (activeTab === 'pesan'
+                ? 'border-green-600 text-green-700 bg-green-50/50'
+                : 'border-transparent text-slate-500 hover:bg-slate-50')
+            }
+          >
+            <MessageCircle size={18} className="mr-2" />
+            Pesan
+          </button>
         </div>
 
         <div className="p-6 sm:p-8">
+          {activeTab === 'dompet' && (
+            <DompetView role="umkm" />
+          )}
+
+          {activeTab === 'pesan' && (
+            <ChatView 
+              currentUser={currentUser} 
+              users={users} 
+              role="umkm" 
+              messages={messages} 
+              setMessages={setMessages} 
+              initialActiveChat={activeChatId}
+            />
+          )}
+
           {activeTab === 'project' && (
             <div className="space-y-6">
               {myProjects.length === 0 ? (
@@ -1629,10 +1763,23 @@ function UMKMDashboard({
                                       </p>
                                     </div>
                                   </div>
-
-                                  <button className="text-xs bg-green-600 hover:bg-green-700 text-white font-bold px-3 py-1.5 rounded-lg">
-                                    Terima & Hubungi
-                                  </button>
+                                  <div className="flex gap-2">
+                                    <button 
+                                      onClick={(e) => { 
+                                        e.stopPropagation(); 
+                                        handleStartChat(applicant.studentId); 
+                                      }} 
+                                      className="text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-3 py-1.5 rounded-lg flex items-center"
+                                    >
+                                      <MessageCircle size={14} className="mr-1" /> Chat
+                                    </button>
+                                    <button 
+                                      onClick={(e) => e.stopPropagation()} 
+                                      className="text-xs bg-green-600 hover:bg-green-700 text-white font-bold px-3 py-1.5 rounded-lg"
+                                    >
+                                      Terima
+                                    </button>
+                                  </div>
                                 </div>
                               )
                             )}
@@ -2201,5 +2348,314 @@ function Footer() {
         </div>
       </footer>
     </>
+  );
+}
+function DompetView({ role }) {
+  const [showModal, setShowModal] = useState(null);
+  const [amount, setAmount] = useState('');
+
+  const formatRupiah = (angka) => {
+    return new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      maximumFractionDigits: 0
+    }).format(Number(angka));
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    alert(`Permintaan ${showModal === 'topup' ? 'Top Up' : 'Penarikan'} sebesar ${formatRupiah(amount)} berhasil diajukan dan menunggu konfirmasi admin.`);
+    setShowModal(null);
+    setAmount('');
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-slate-900 rounded-3xl p-8 text-white shadow-xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
+          <DollarSign size={120} />
+        </div>
+        <p className="text-slate-400 font-bold mb-2">Total Saldo Aktif</p>
+        <h2 className="text-4xl md:text-5xl font-extrabold mb-8">{formatRupiah(0)}</h2>
+        <div className="flex gap-4 relative z-10">
+          {role === 'umkm' && (
+            <button
+              onClick={() => setShowModal('topup')}
+              className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-lg flex items-center"
+            >
+              <Plus size={20} className="mr-2" />
+              Isi Saldo (Top Up)
+            </button>
+          )}
+          {role === 'student' && (
+            <button
+              onClick={() => setShowModal('withdraw')}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-lg flex items-center"
+            >
+              <ArrowRight size={20} className="mr-2" />
+              Tarik Dana
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-3xl p-6 md:p-8 shadow-sm border border-slate-200">
+        <h3 className="text-xl font-extrabold text-slate-900 mb-6 flex items-center">
+          <Clock size={20} className="mr-2 text-slate-400" />
+          Riwayat Transaksi
+        </h3>
+        
+        <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+          <CreditCard size={40} className="mx-auto text-slate-300 mb-3" />
+          <p className="text-slate-500 font-medium">Belum ada riwayat transaksi.</p>
+        </div>
+      </div>
+
+      {showModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4" onClick={() => setShowModal(null)}>
+          <div className="bg-white rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-start mb-6">
+              <h2 className="text-2xl font-extrabold text-slate-900">
+                {showModal === 'topup' ? 'Top Up Saldo' : 'Tarik Dana'}
+              </h2>
+              <button onClick={() => setShowModal(null)} className="bg-slate-100 p-2 rounded-full text-slate-500 hover:bg-slate-200">
+                <X size={20} />
+              </button>
+            </div>
+
+            {showModal === 'topup' ? (
+              <div className="mb-6 p-4 bg-amber-50 rounded-xl border border-amber-200 text-sm text-amber-800">
+                <p className="font-bold mb-1">Transfer Manual</p>
+                <p>Silakan transfer ke rekening admin di bawah ini, lalu ajukan nominal top up:</p>
+                <div className="mt-3 font-mono bg-white p-2 rounded font-bold text-lg text-center border border-amber-200">
+                  BCA 123-456-7890 (Admin GigSkill)
+                </div>
+              </div>
+            ) : (
+              <div className="mb-6 p-4 bg-blue-50 rounded-xl border border-blue-200 text-sm text-blue-800">
+                <p className="font-bold mb-1">Penarikan Dana</p>
+                <p>Dana akan ditransfer ke rekening bank / e-wallet yang terdaftar. Proses penarikan manual membutuhkan waktu 1x24 jam.</p>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Nominal (Rp)</label>
+                <input
+                  type="number"
+                  required
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="Contoh: 50000"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {showModal === 'topup' && (
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Bukti Transfer (Opsional)</label>
+                  <input
+                    type="file"
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                  />
+                </div>
+              )}
+
+              {showModal === 'withdraw' && (
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Rekening Tujuan / E-Wallet</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Contoh: BCA 987654321 a/n Budi"
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              )}
+
+              <button
+                type="submit"
+                className={`w-full py-3.5 mt-2 rounded-xl font-bold text-white transition-all ${showModal === 'topup' ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+              >
+                Kirim Permintaan
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+function ChatView({ currentUser, users, role, messages, setMessages, initialActiveChat }) {
+  const [activeChat, setActiveChat] = useState(initialActiveChat || null);
+  const [newMessage, setNewMessage] = useState('');
+
+  React.useEffect(() => {
+    if (initialActiveChat) {
+      setActiveChat(initialActiveChat);
+    }
+  }, [initialActiveChat]);
+
+  // Generate chat list based on messages object
+  const chatList = [];
+  Object.keys(messages).forEach(chatId => {
+    const parts = chatId.split('_');
+    if (parts.length === 3 && parts[0] === 'chat') {
+      const studentId = parts[1];
+      const umkmId = parts[2];
+      
+      let partnerId = null;
+      if (role === 'student' && currentUser.id === studentId) {
+        partnerId = umkmId;
+      } else if (role === 'umkm' && currentUser.id === umkmId) {
+        partnerId = studentId;
+      }
+      
+      if (partnerId) {
+        const partner = users.find(u => u.id === partnerId);
+        const chatMessages = messages[chatId] || [];
+        const lastMsg = chatMessages[chatMessages.length - 1];
+        chatList.push({
+          id: chatId,
+          partnerId: partnerId,
+          partnerName: partner ? partner.name : 'Unknown User',
+          lastMessage: lastMsg ? lastMsg.text : 'Belum ada pesan',
+          unread: 0
+        });
+      }
+    }
+  });
+
+  // If initialActiveChat is provided but not in chatList yet, add a placeholder
+  if (initialActiveChat && !chatList.find(c => c.id === initialActiveChat)) {
+    const parts = initialActiveChat.split('_');
+    const partnerId = role === 'student' ? parts[2] : parts[1];
+    const partner = users.find(u => u.id === partnerId);
+    chatList.push({
+      id: initialActiveChat,
+      partnerId: partnerId,
+      partnerName: partner ? partner.name : 'Unknown User',
+      lastMessage: 'Belum ada pesan',
+      unread: 0
+    });
+  }
+
+  const handleSendMessage = (e) => {
+    e.preventDefault();
+    if (!newMessage.trim() || !activeChat) return;
+
+    const newMsg = {
+      id: Date.now(),
+      senderId: currentUser.id,
+      text: newMessage,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+
+    setMessages(prev => ({
+      ...prev,
+      [activeChat]: [...(prev[activeChat] || []), newMsg]
+    }));
+    setNewMessage('');
+  };
+
+  return (
+    <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden flex h-[600px]">
+      {/* Chat List - Sidebar */}
+      <div className={`w-full md:w-1/3 border-r border-slate-100 flex flex-col ${activeChat ? 'hidden md:flex' : 'flex'}`}>
+        <div className="p-4 border-b border-slate-100 bg-slate-50">
+          <h3 className="font-extrabold text-slate-900">Pesan Masuk</h3>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {chatList.map((chat) => (
+            <div 
+              key={chat.id} 
+              onClick={() => setActiveChat(chat.id)}
+              className={`p-4 border-b border-slate-50 cursor-pointer transition-colors hover:bg-slate-50 flex items-start gap-3 ${activeChat === chat.id ? 'bg-blue-50/50' : ''}`}
+            >
+              <div className="w-10 h-10 rounded-full bg-slate-200 flex-shrink-0 flex items-center justify-center text-slate-500 font-bold">
+                {chat.partnerName.charAt(0)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex justify-between items-center mb-1">
+                  <h4 className="font-bold text-slate-900 truncate text-sm">{chat.partnerName}</h4>
+                  {chat.unread > 0 && (
+                    <span className="bg-blue-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                      {chat.unread}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-500 truncate">{chat.lastMessage}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Chat Area */}
+      <div className={`w-full md:w-2/3 flex flex-col ${!activeChat ? 'hidden md:flex' : 'flex'}`}>
+        {activeChat ? (
+          <>
+            <div className="p-4 border-b border-slate-100 bg-white flex items-center gap-3">
+              <button 
+                onClick={() => setActiveChat(null)}
+                className="md:hidden p-2 -ml-2 text-slate-500 hover:bg-slate-100 rounded-full"
+              >
+                <ArrowRight size={20} className="rotate-180" />
+              </button>
+              <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex-shrink-0 flex items-center justify-center font-bold">
+                {chatList.find(c => c.id === activeChat)?.partnerName.charAt(0)}
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900">{chatList.find(c => c.id === activeChat)?.partnerName}</h3>
+                <p className="text-xs text-slate-500">Online</p>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 bg-slate-50/50 space-y-4">
+              {(messages[activeChat] || []).map((msg) => {
+                const isMe = msg.senderId === currentUser.id;
+                return (
+                  <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[75%] rounded-2xl px-4 py-2 ${isMe ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-white border border-slate-200 text-slate-700 rounded-tl-none shadow-sm'}`}>
+                      <p className="text-sm">{msg.text}</p>
+                      <p className={`text-[10px] mt-1 text-right ${isMe ? 'text-blue-200' : 'text-slate-400'}`}>
+                        {msg.time}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="p-4 bg-white border-t border-slate-100">
+              <form onSubmit={handleSendMessage} className="flex gap-2">
+                <input 
+                  type="text" 
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  placeholder="Ketik pesan..." 
+                  className="flex-1 bg-slate-100 border-transparent focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-xl px-4 py-2.5 text-sm transition-all"
+                />
+                <button 
+                  type="submit"
+                  disabled={!newMessage.trim()}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white rounded-xl px-4 py-2.5 transition-all flex items-center justify-center"
+                >
+                  <MessageCircle size={18} />
+                </button>
+              </form>
+            </div>
+          </>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-8 text-center">
+            <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-4">
+              <MessageCircle size={40} className="text-slate-300" />
+            </div>
+            <p className="font-bold text-slate-500">Pilih pesan untuk mulai mengobrol</p>
+            <p className="text-sm mt-1">Diskusikan detail project sebelum membuat kesepakatan.</p>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
