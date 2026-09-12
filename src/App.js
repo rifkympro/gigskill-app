@@ -1025,8 +1025,14 @@ function StudentDashboard({
   return (
     <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-10">
       {selectedProject && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl">
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
+          onClick={() => setSelectedProject(null)}
+        >
+          <div 
+            className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto relative"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-start mb-6">
               <div>
                 <span className="text-xs font-bold text-amber-600 bg-amber-50 px-3 py-1 rounded-full">
@@ -1869,8 +1875,14 @@ function Footer() {
   return (
     <>
       {activeModal === 'tentang' && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl">
+        <div 
+          className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
+          onClick={() => setActiveModal(null)}
+        >
+          <div 
+            className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto relative"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-start mb-5 border-b border-slate-100 pb-4">
               <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
                 Tentang Kami
@@ -1959,8 +1971,14 @@ function Footer() {
       )}
 
       {activeModal === 'panduan' && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl">
+        <div 
+          className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
+          onClick={() => setActiveModal(null)}
+        >
+          <div 
+            className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto relative"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-start mb-5 border-b border-slate-100 pb-4">
               <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
                 Panduan Penggunaan
@@ -2023,8 +2041,14 @@ function Footer() {
       )}
 
       {activeModal === 'syarat' && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl">
+        <div 
+          className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
+          onClick={() => setActiveModal(null)}
+        >
+          <div 
+            className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto relative"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-start mb-5 border-b border-slate-100 pb-4">
               <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
                 Syarat & Ketentuan
@@ -2080,8 +2104,14 @@ function Footer() {
       )}
 
       {showRedirectConfirm && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl text-center">
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4"
+          onClick={() => setShowRedirectConfirm(false)}
+        >
+          <div 
+            className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl text-center max-h-[90vh] overflow-y-auto relative"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-5">
               <FileText size={32} />
             </div>
