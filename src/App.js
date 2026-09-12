@@ -9,7 +9,6 @@ import {
   Clock,
   CheckCircle2,
   User,
-  FileText,
   DollarSign,
   MessageCircle,
   Mail,
@@ -23,8 +22,7 @@ import {
   XCircle,
   ArrowRight,
   ShieldCheck,
-  CreditCard,
-  Star
+  CreditCard
 } from 'lucide-react';
 
 const initialUsers = [
