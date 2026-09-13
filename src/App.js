@@ -631,10 +631,10 @@ export default function App() {
                   <p className="mb-4">GigSkill adalah platform micro-credential inovatif yang dirancang khusus untuk menjembatani mahasiswa dengan UMKM (Usaha Mikro, Kecil, dan Menengah). Misi kami adalah memberdayakan mahasiswa dengan pengalaman nyata sambil membantu UMKM mendapatkan talenta kreatif.</p>
                   <h4 className="font-bold text-slate-800 mb-2">KELOMPOK 7</h4>
                   <ul className="list-disc pl-5 space-y-1">
-                    <li>1. RIPKI MAULANA â€” 251010504293</li>
-                    <li>2. MUHAMAD SOFIYAN â€” 251010502197</li>
-                    <li>3. FARAH ZAFIRA ROSYADI â€” 251010502335</li>
-                    <li>4. NAJMA NAURA TSABITA â€” 251010502277</li>
+                    <li>1. RIPKI MAULANA — 251010504293</li>
+                    <li>2. MUHAMAD SOFIYAN — 251010502197</li>
+                    <li>3. FARAH ZAFIRA ROSYADI — 251010502335</li>
+                    <li>4. NAJMA NAURA TSABITA — 251010502277</li>
                   </ul>
                 </div>
               )}
@@ -1174,7 +1174,7 @@ function RegisterPage({
                     password: e.target.value
                   })
                 }
-                placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                placeholder="••••••••"
                 className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-500 transition-all font-medium"
               />
             </div>
@@ -1543,9 +1543,9 @@ function StudentDashboard({
             <div className="mb-4 flex flex-wrap gap-2">
               <span className="text-xs font-bold bg-slate-100 px-2 py-1 rounded">{selectedProject.category || 'Lainnya'}</span>
               {selectedProject.type === 'Offline' ? (
-                <span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded border border-amber-200">ðŸ“ Offline - {selectedProject.location} {getDistanceText(currentUser.location, selectedProject.location)}</span>
+                <span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded border border-amber-200">📍 Offline - {selectedProject.location} {getDistanceText(currentUser.location, selectedProject.location)}</span>
               ) : (
-                <span className="text-xs font-bold bg-blue-50 text-blue-600 px-2 py-1 rounded border border-blue-100">ðŸŒ Online Remote</span>
+                <span className="text-xs font-bold bg-blue-50 text-blue-600 px-2 py-1 rounded border border-blue-100">🌐 Online Remote</span>
               )}
               {selectedProject.tags.map(t => <span key={t} className="text-xs font-bold bg-blue-50 text-blue-600 px-2 py-1 rounded">{t}</span>)}
             </div>
@@ -1685,11 +1685,11 @@ function StudentDashboard({
                       <div className="mt-4 flex flex-wrap gap-2">
                         {project.type === 'Offline' ? (
                           <span className="bg-amber-100 text-amber-700 border border-amber-200 text-xs font-bold px-2.5 py-1 rounded-md flex items-center">
-                            ðŸ“ Offline - {project.location}
+                            📍 Offline - {project.location}
                           </span>
                         ) : (
                           <span className="bg-blue-50 text-blue-600 border border-blue-100 text-xs font-bold px-2.5 py-1 rounded-md flex items-center">
-                            ðŸŒ Online
+                            🌐 Online
                           </span>
                         )}
                         {project.tags.map((tag) => (
@@ -1739,9 +1739,9 @@ function StudentDashboard({
                         </div>
                         <h3 className="text-lg font-extrabold text-slate-900">{project.title}</h3>
                         {project.type === 'Offline' ? (
-                           <span className="inline-block mt-1 bg-amber-50 text-amber-600 border border-amber-100 text-[10px] font-bold px-2 py-0.5 rounded flex items-center w-fit">ðŸ“ Offline - {project.location}</span>
+                           <span className="inline-block mt-1 bg-amber-50 text-amber-600 border border-amber-100 text-[10px] font-bold px-2 py-0.5 rounded flex items-center w-fit">📍 Offline - {project.location}</span>
                         ) : (
-                           <span className="inline-block mt-1 bg-blue-50 text-blue-600 border border-blue-100 text-[10px] font-bold px-2 py-0.5 rounded flex items-center w-fit">ðŸŒ Online</span>
+                           <span className="inline-block mt-1 bg-blue-50 text-blue-600 border border-blue-100 text-[10px] font-bold px-2 py-0.5 rounded flex items-center w-fit">🌐 Online</span>
                         )}
                         <p className="text-sm text-slate-500 mt-1 line-clamp-2">{project.desc}</p>
                         <p className="text-sm text-slate-500 mt-2 italic bg-slate-50 p-2 rounded-lg border border-slate-100">Proposal: "{application.proposal}"</p>
@@ -1821,7 +1821,7 @@ function StudentDashboard({
                 </div>
                 <div>
                   <h2 className="text-2xl font-extrabold text-slate-900">{currentUser.name}</h2>
-                  <p className="text-slate-500 font-medium">{currentUser.univ} â€¢ Semester {currentUser.semester || '?'}</p>
+                  <p className="text-slate-500 font-medium">{currentUser.univ} • Semester {currentUser.semester || '?'}</p>
                   <div className="flex items-center mt-2 text-amber-500">
                     <span className="font-bold mr-1">{currentUser.rating || '0.0'}</span>
                     <span className="text-slate-400 text-sm font-medium">/ 5.0 (Rating)</span>
@@ -2052,7 +2052,7 @@ function UMKMDashboard({
               </div>
               <div>
                 <h3 className="text-xl font-extrabold text-slate-900">{showStudentProfile.name}</h3>
-                <p className="text-slate-500 text-sm">{showStudentProfile.univ} â€¢ Semester {showStudentProfile.semester}</p>
+                <p className="text-slate-500 text-sm">{showStudentProfile.univ} • Semester {showStudentProfile.semester}</p>
               </div>
             </div>
             <div className="space-y-4">
@@ -2265,7 +2265,7 @@ function UMKMDashboard({
                                             </span>
                                           )}
                                         </div>
-                                        <p className="text-xs text-slate-500">{studentInfo?.univ} â€¢ Melamar pada {applicant.date}</p>
+                                        <p className="text-xs text-slate-500">{studentInfo?.univ} • Melamar pada {applicant.date}</p>
                                       </div>
                                     </div>
                                     <button onClick={() => setShowStudentProfile(studentInfo)} className="text-xs font-bold text-blue-600 hover:underline">Lihat Profil Lengkap</button>
@@ -2878,11 +2878,11 @@ function ChatView({ currentUser, users, role, messages, setMessages, initialActi
         <div className="flex gap-2">
            {isFullscreen ? (
                     <button type="button" onClick={() => setIsFullscreen(false)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg flex items-center gap-1">
-                      <span className="text-sm font-bold hidden md:inline">Kecilkan</span><span className="text-sm font-bold md:hidden">â†“</span>
+                      <span className="text-sm font-bold hidden md:inline">Kecilkan</span><span className="text-sm font-bold md:hidden">↓</span>
                     </button>
                  ) : (
                     <button type="button" onClick={() => setIsFullscreen(true)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg">
-                      <span className="text-xs font-bold hidden md:inline">Perbesar</span><span className="text-xs font-bold md:hidden">â¤¢</span>
+                      <span className="text-xs font-bold hidden md:inline">Perbesar</span><span className="text-xs font-bold md:hidden">⤢</span>
                     </button>
                  )}
            <button type="button" onClick={onClose} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg"><X size={20}/></button>
@@ -2895,11 +2895,11 @@ function ChatView({ currentUser, users, role, messages, setMessages, initialActi
           <div className="flex gap-1">
              {isFullscreen ? (
                     <button type="button" onClick={() => setIsFullscreen(false)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg flex items-center gap-1">
-                      <span className="text-sm font-bold hidden md:inline">Kecilkan</span><span className="text-sm font-bold md:hidden">â†“</span>
+                      <span className="text-sm font-bold hidden md:inline">Kecilkan</span><span className="text-sm font-bold md:hidden">↓</span>
                     </button>
                  ) : (
                     <button type="button" onClick={() => setIsFullscreen(true)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg">
-                      <span className="text-xs font-bold hidden md:inline">Perbesar</span><span className="text-xs font-bold md:hidden">â¤¢</span>
+                      <span className="text-xs font-bold hidden md:inline">Perbesar</span><span className="text-xs font-bold md:hidden">⤢</span>
                     </button>
                  )}
              <button type="button" onClick={onClose} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg"><X size={20}/></button>
@@ -2938,7 +2938,7 @@ function ChatView({ currentUser, users, role, messages, setMessages, initialActi
             <div className="p-4 border-b border-slate-200 bg-white flex justify-between items-center shadow-sm z-20 shrink-0">
               <div className="flex items-center gap-3">
                 <button type="button" className="md:hidden p-2 -ml-2 text-slate-500 hover:bg-slate-100 rounded-lg" onClick={() => setActiveChat(null)}>
-                  <span className="text-sm font-bold">â†</span>
+                  <span className="text-sm font-bold">←</span>
                 </button>
                 <div>
                   <h3 className="font-extrabold text-slate-900 truncate">{activePartner.name}</h3>
@@ -2948,11 +2948,11 @@ function ChatView({ currentUser, users, role, messages, setMessages, initialActi
               <div className="flex gap-1">
                  {isFullscreen ? (
                     <button type="button" onClick={() => setIsFullscreen(false)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg flex items-center gap-1">
-                      <span className="text-sm font-bold hidden md:inline">Kecilkan</span><span className="text-sm font-bold md:hidden">â†“</span>
+                      <span className="text-sm font-bold hidden md:inline">Kecilkan</span><span className="text-sm font-bold md:hidden">↓</span>
                     </button>
                  ) : (
                     <button type="button" onClick={() => setIsFullscreen(true)} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg">
-                      <span className="text-xs font-bold hidden md:inline">Perbesar</span><span className="text-xs font-bold md:hidden">â¤¢</span>
+                      <span className="text-xs font-bold hidden md:inline">Perbesar</span><span className="text-xs font-bold md:hidden">⤢</span>
                     </button>
                  )}
                  <button type="button" onClick={onClose} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg"><X size={20}/></button>
@@ -2966,7 +2966,7 @@ function ChatView({ currentUser, users, role, messages, setMessages, initialActi
                   <p className="text-sm font-bold text-blue-700 leading-tight truncate">{activeProject.title}</p>
                   <div className="flex gap-2 text-[10px] text-slate-600 mt-1 font-bold">
                     <span>Rp {Number(activeProject.budget).toLocaleString('id-ID')}</span>
-                    <span>â€¢</span>
+                    <span>•</span>
                     <span className="capitalize">{activeProject.status}</span>
                   </div>
                 </div>
