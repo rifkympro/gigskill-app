@@ -22,8 +22,113 @@ import {
   XCircle,
   ArrowRight,
   ShieldCheck,
-  CreditCard
+  CreditCard,
+  MapPin
 } from 'lucide-react';
+
+
+const LocationPicker = ({ name, value, onChange }) => {
+  const [provinces, setProvinces] = React.useState([]);
+  const [regencies, setRegencies] = React.useState([]);
+  const [districts, setDistricts] = React.useState([]);
+
+  const [selectedProv, setSelectedProv] = React.useState('');
+  const [selectedReg, setSelectedReg] = React.useState('');
+  const [selectedDist, setSelectedDist] = React.useState('');
+
+  const [regencyName, setRegencyName] = React.useState('');
+  const [isEditing, setIsEditing] = React.useState(!value);
+
+  React.useEffect(() => {
+    fetch('https://www.emsifa.com/api-wilayah-indonesia/api/provinces.json')
+      .then(res => res.json())
+      .then(data => setProvinces(data))
+      .catch(() => {});
+  }, []);
+
+  const toTitleCase = (str) => {
+    return str.toLowerCase().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+  };
+
+  const handleProvChange = (e) => {
+    const provId = e.target.value;
+    setSelectedProv(provId);
+    setSelectedReg('');
+    setSelectedDist('');
+    setRegencies([]);
+    setDistricts([]);
+    onChange('');
+    if (provId) {
+      fetch(`https://www.emsifa.com/api-wilayah-indonesia/api/regencies/${provId}.json`)
+        .then(res => res.json())
+        .then(data => setRegencies(data));
+    }
+  };
+
+  const handleRegChange = (e) => {
+    const regId = e.target.value;
+    const name = e.target.options[e.target.selectedIndex].text;
+    setSelectedReg(regId);
+    setRegencyName(name);
+    setSelectedDist('');
+    setDistricts([]);
+    onChange('');
+    if (regId) {
+      fetch(`https://www.emsifa.com/api-wilayah-indonesia/api/districts/${regId}.json`)
+        .then(res => res.json())
+        .then(data => setDistricts(data));
+    }
+  };
+
+  const handleDistChange = (e) => {
+    const distId = e.target.value;
+    const name = e.target.options[e.target.selectedIndex].text;
+    setSelectedDist(distId);
+    
+    if (distId) {
+      onChange(`${toTitleCase(name)}, ${toTitleCase(regencyName)}`);
+      setIsEditing(false);
+    } else {
+      onChange('');
+    }
+  };
+
+  if (!isEditing && value) {
+    return (
+      <>
+        {name && <input type="hidden" name={name} value={value || ""} />}
+        <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl">
+        <span className="text-sm font-medium text-slate-800">{value}</span>
+        <button type="button" onClick={() => setIsEditing(true)} className="text-xs font-bold text-blue-600 hover:text-blue-700">Ubah</button>
+      </div>
+      </>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {name && <input type="hidden" name={name} value={value || ""} />}
+      <select className="w-full p-3 rounded-xl border border-slate-200 bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={selectedProv} onChange={handleProvChange}>
+        <option value="">-- Pilih Provinsi --</option>
+        {provinces.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+      </select>
+      
+      {selectedProv && (
+        <select className="w-full p-3 rounded-xl border border-slate-200 bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={selectedReg} onChange={handleRegChange}>
+          <option value="">-- Pilih Kota/Kabupaten --</option>
+          {regencies.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+        </select>
+      )}
+
+      {selectedReg && (
+        <select className="w-full p-3 rounded-xl border border-slate-200 bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={selectedDist} onChange={handleDistChange}>
+          <option value="">-- Pilih Kecamatan --</option>
+          {districts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+        </select>
+      )}
+    </div>
+  );
+};
 
 const initialUsers = [
   {
@@ -33,6 +138,7 @@ const initialUsers = [
     email: 'jokosubianto@student.com',
     password: '123',
     univ: 'Universitas Pamulang',
+    location: 'Tangerang Selatan',
     semester: 5,
     bio: 'Mahasiswa desain grafis yang suka tantangan.',
     skills: ['Graphic Design', 'Figma', 'Adobe Illustrator'],
@@ -70,6 +176,8 @@ const initialProjects = [
     id: 'p1',
     umkmId: 'u2',
     umkmName: 'Toko Kue Ibu Tin',
+    type: 'Offline',
+    location: 'Jakarta Selatan',
     title: 'Desain Logo & Banner Toko Kue',
     budget: '150000',
     deadline: '3 Hari',
@@ -84,6 +192,8 @@ const initialProjects = [
     id: 'p2',
     umkmId: 'u2',
     umkmName: 'Toko Kue Ibu Tin',
+    type: 'Online',
+    location: '',
     title: 'Admin Instagram untuk 1 Minggu',
     budget: '250000',
     deadline: '7 Hari',
@@ -815,6 +925,7 @@ function RegisterPage({
     email: '',
     password: '',
     univ: '',
+    location: '',
     phone: ''
   });
 
@@ -827,6 +938,7 @@ function RegisterPage({
       email: formData.email,
       password: formData.password,
       univ: formData.univ,
+      location: formData.location,
       phone: formData.phone
     });
   };
@@ -906,11 +1018,23 @@ function RegisterPage({
                 </div>
               </div>
 
+              
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1.5 ml-1">
+                  Domisili (Kota/Area)
+                </label>
+                <div className="relative">
+                  <MapPin
+                    className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                    size={20}
+                  />
+                  <div className="pl-12 w-full pt-1"><LocationPicker value={formData.location} onChange={(val) => setFormData({...formData, location: val})} /></div>
+                </div>
+              </div>
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-1.5 ml-1">
                   Universitas
                 </label>
-
                 <div className="relative">
                   <Building
                     className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
@@ -1279,6 +1403,15 @@ function StudentDashboard({
     }).format(Number(angka));
   };
 
+  
+  const getDistanceText = (studentLoc, projectLoc) => {
+    if (!studentLoc || !projectLoc) return '';
+    if (studentLoc.trim().toLowerCase() === projectLoc.trim().toLowerCase()) {
+      return '(Dekat - Satu Kota)';
+    }
+    return '(Berbeda Kota)';
+  };
+
   const handleApplySubmit = (e) => {
     e.preventDefault();
     onApply(selectedProject.id, proposalText);
@@ -1359,6 +1492,11 @@ function StudentDashboard({
                 <input required type="text" value={editProfileData.name} onChange={e => setEditProfileData({...editProfileData, name: e.target.value})} className="w-full p-3 rounded-xl border border-slate-200" />
               </div>
               <div className="grid grid-cols-2 gap-4">
+                
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Domisili (Kota/Area)</label>
+                  <LocationPicker value={editProfileData.location || ''} onChange={val => setEditProfileData({...editProfileData, location: val})} />
+                </div>
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-2">Universitas</label>
                   <input required type="text" value={editProfileData.univ} onChange={e => setEditProfileData({...editProfileData, univ: e.target.value})} className="w-full p-3 rounded-xl border border-slate-200" />
@@ -1404,6 +1542,11 @@ function StudentDashboard({
             
             <div className="mb-4 flex flex-wrap gap-2">
               <span className="text-xs font-bold bg-slate-100 px-2 py-1 rounded">{selectedProject.category || 'Lainnya'}</span>
+              {selectedProject.type === 'Offline' ? (
+                <span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded border border-amber-200">ðŸ“ Offline - {selectedProject.location} {getDistanceText(currentUser.location, selectedProject.location)}</span>
+              ) : (
+                <span className="text-xs font-bold bg-blue-50 text-blue-600 px-2 py-1 rounded border border-blue-100">ðŸŒ Online Remote</span>
+              )}
               {selectedProject.tags.map(t => <span key={t} className="text-xs font-bold bg-blue-50 text-blue-600 px-2 py-1 rounded">{t}</span>)}
             </div>
 
@@ -1540,6 +1683,15 @@ function StudentDashboard({
                         </div>
                       </div>
                       <div className="mt-4 flex flex-wrap gap-2">
+                        {project.type === 'Offline' ? (
+                          <span className="bg-amber-100 text-amber-700 border border-amber-200 text-xs font-bold px-2.5 py-1 rounded-md flex items-center">
+                            ðŸ“ Offline - {project.location}
+                          </span>
+                        ) : (
+                          <span className="bg-blue-50 text-blue-600 border border-blue-100 text-xs font-bold px-2.5 py-1 rounded-md flex items-center">
+                            ðŸŒ Online
+                          </span>
+                        )}
                         {project.tags.map((tag) => (
                           <span key={tag} className="bg-slate-100 text-slate-600 text-xs font-bold px-2.5 py-1 rounded-md">{tag}</span>
                         ))}
@@ -1586,6 +1738,11 @@ function StudentDashboard({
                           </span>
                         </div>
                         <h3 className="text-lg font-extrabold text-slate-900">{project.title}</h3>
+                        {project.type === 'Offline' ? (
+                           <span className="inline-block mt-1 bg-amber-50 text-amber-600 border border-amber-100 text-[10px] font-bold px-2 py-0.5 rounded flex items-center w-fit">ðŸ“ Offline - {project.location}</span>
+                        ) : (
+                           <span className="inline-block mt-1 bg-blue-50 text-blue-600 border border-blue-100 text-[10px] font-bold px-2 py-0.5 rounded flex items-center w-fit">ðŸŒ Online</span>
+                        )}
                         <p className="text-sm text-slate-500 mt-1 line-clamp-2">{project.desc}</p>
                         <p className="text-sm text-slate-500 mt-2 italic bg-slate-50 p-2 rounded-lg border border-slate-100">Proposal: "{application.proposal}"</p>
                         <p className="text-xs font-bold text-slate-400 mt-2">Dilamar pada: {application.date}</p>
@@ -1744,6 +1901,8 @@ function UMKMDashboard({
   const [rejectReason, setRejectReason] = React.useState('');
   
   const [isCustomCategory, setIsCustomCategory] = React.useState(false);
+  const [projectType, setProjectType] = React.useState('Online');
+  const [newProjectLocation, setNewProjectLocation] = React.useState('');
   const [isCustomDeadline, setIsCustomDeadline] = React.useState(false);
   const [expandedProject, setExpandedProject] = React.useState(null);
   const [showStudentProfile, setShowStudentProfile] = React.useState(null);
@@ -1793,6 +1952,69 @@ function UMKMDashboard({
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-2">Nama Usaha</label>
                 <input required type="text" value={editProfileData.name} onChange={e => setEditProfileData({...editProfileData, name: e.target.value})} className="w-full p-3 rounded-xl border border-slate-200" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Tipe Project</label>
+                  <select 
+                    name="type" 
+                    value={projectType}
+                    onChange={e => setProjectType(e.target.value)}
+                    className="w-full p-3 rounded-xl border border-slate-200 bg-white"
+                  >
+                    <option value="Online">Online (Remote)</option>
+                    <option value="Offline">Offline (On-site)</option>
+                  </select>
+                </div>
+                {projectType === 'Offline' && (
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-2">Lokasi (Kota / Area)</label>
+                    { /* use state for location so it can be managed by LocationPicker */ }
+                    <LocationPicker name="location" value={newProjectLocation} onChange={setNewProjectLocation} />
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Tipe Project</label>
+                  <select 
+                    name="type" 
+                    value={projectType}
+                    onChange={e => setProjectType(e.target.value)}
+                    className="w-full p-3 rounded-xl border border-slate-200 bg-white"
+                  >
+                    <option value="Online">Online (Remote)</option>
+                    <option value="Offline">Offline (On-site)</option>
+                  </select>
+                </div>
+                {projectType === 'Offline' && (
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-2">Lokasi (Kota / Area)</label>
+                    { /* use state for location so it can be managed by LocationPicker */ }
+                    <LocationPicker name="location" value={newProjectLocation} onChange={setNewProjectLocation} />
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Tipe Project</label>
+                  <select 
+                    name="type" 
+                    value={projectType}
+                    onChange={e => setProjectType(e.target.value)}
+                    className="w-full p-3 rounded-xl border border-slate-200 bg-white"
+                  >
+                    <option value="Online">Online (Remote)</option>
+                    <option value="Offline">Offline (On-site)</option>
+                  </select>
+                </div>
+                {projectType === 'Offline' && (
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-2">Lokasi (Kota / Area)</label>
+                    { /* use state for location so it can be managed by LocationPicker */ }
+                    <LocationPicker name="location" value={newProjectLocation} onChange={setNewProjectLocation} />
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -2088,6 +2310,8 @@ function UMKMDashboard({
               e.preventDefault();
               const formData = new FormData(e.target);
               onPostProject({
+                type: formData.get('type'),
+                location: formData.get('type') === 'Offline' ? formData.get('location') : '',
                 title: formData.get('title'),
                 category: formData.get('category') === 'Custom' ? formData.get('custom_category') : formData.get('category'),
                 budget: formData.get('budget'),
@@ -2099,11 +2323,33 @@ function UMKMDashboard({
                 applicants: []
               });
               e.target.reset();
+              setNewProjectLocation('');
               setActiveTab('project');
             }} className="space-y-4">
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-2">Judul Project</label>
                 <input name="title" required type="text" placeholder="Cth: Desain Logo Toko" className="w-full p-3 rounded-xl border border-slate-200" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Tipe Project</label>
+                  <select 
+                    name="type" 
+                    value={projectType}
+                    onChange={e => setProjectType(e.target.value)}
+                    className="w-full p-3 rounded-xl border border-slate-200 bg-white"
+                  >
+                    <option value="Online">Online (Remote)</option>
+                    <option value="Offline">Offline (On-site)</option>
+                  </select>
+                </div>
+                {projectType === 'Offline' && (
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-2">Lokasi (Kota / Area)</label>
+                    { /* use state for location so it can be managed by LocationPicker */ }
+                    <LocationPicker name="location" value={newProjectLocation} onChange={setNewProjectLocation} />
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
