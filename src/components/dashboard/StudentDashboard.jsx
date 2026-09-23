@@ -203,10 +203,25 @@ export default function StudentDashboard({
   });
 
   const handleStartChat = (umkmId, projectId) => {
-    setActiveChatId(`chat_${currentUser.id}_${umkmId}_${projectId}`);
-    setActiveChatContext(projectId);
+    // If an existing chat already exists in messages between these two, re-use its chatId
+    let existingChatId = null;
+    if (Array.isArray(messages)) {
+      const existingMsg = messages.find(m => 
+        m.chatId && 
+        m.chatId.includes(currentUser.id) && 
+        m.chatId.includes(umkmId) &&
+        (!projectId || m.chatId.includes(projectId))
+      );
+      if (existingMsg) {
+        existingChatId = existingMsg.chatId;
+      }
+    }
+    const finalChatId = existingChatId || `chat::${currentUser.id}::${umkmId}::${projectId || 'general'}`;
+    setActiveChatId(finalChatId);
+    setActiveChatContext(projectId || null);
     setIsChatOpen(true);
     setSelectedProject(null);
+    if (onStartChat) onStartChat(umkmId, projectId);
   };
 
   const myApplications = projects.filter((p) =>
@@ -1298,6 +1313,9 @@ export default function StudentDashboard({
                   setActiveTab('jasa');
                 } else if (notif.actionType === 'open_project' || notif.actionType === 'open_lamaran') {
                   setActiveTab(notif.actionType === 'open_lamaran' ? 'lamaran' : 'cari');
+                } else if (notif.actionType === 'open_chat' && notif.contextId) {
+                  setActiveChatId(notif.contextId);
+                  setIsChatOpen(true);
                 }
               }}
             />

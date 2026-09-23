@@ -20,12 +20,44 @@ export default function ChatView({ currentUser, users, role, messages, setMessag
 
   const getPartnerId = (chatId) => {
     if (!chatId) return null;
+    if (chatId.includes('::')) {
+      const parts = chatId.split('::');
+      return parts[1] === currentUser?.id ? parts[2] : parts[1];
+    }
+    // Search in users array for an ID that is inside chatId (excluding currentUser)
+    if (Array.isArray(users)) {
+      const otherUsers = [...users]
+        .filter(u => u && u.id && u.id !== currentUser?.id)
+        .sort((a, b) => (b.id?.length || 0) - (a.id?.length || 0));
+      const matched = otherUsers.find(u => chatId.includes(u.id));
+      if (matched) return matched.id;
+    }
+    // Fallback: if activeProject is known and its umkmId or applicant matches
+    if (activeProject) {
+      if (role === 'student' && activeProject.umkmId && activeProject.umkmId !== currentUser?.id) {
+        return activeProject.umkmId;
+      }
+    }
     const parts = chatId.split('_');
-    return parts[1] === currentUser.id ? parts[2] : parts[1];
+    if (parts.length >= 3) {
+      return parts[1] === currentUser?.id ? parts[2] : parts[1];
+    }
+    return null;
   };
 
   const getProjectId = (chatId) => {
     if (!chatId) return null;
+    if (chatId.includes('::')) {
+      const parts = chatId.split('::');
+      return parts[3] && parts[3] !== 'general' && parts[3] !== 'none' ? parts[3] : null;
+    }
+    if (Array.isArray(projects)) {
+      const sortedProjects = [...projects]
+        .filter(p => p && p.id)
+        .sort((a, b) => b.id.length - a.id.length);
+      const matched = sortedProjects.find(p => chatId.includes(p.id));
+      if (matched) return matched.id;
+    }
     const parts = chatId.split('_');
     return parts[3] || null;
   };
@@ -33,7 +65,7 @@ export default function ChatView({ currentUser, users, role, messages, setMessag
   const handleSendMessage = (e) => {
     e.preventDefault();
     if (!messageText.trim() || !activeChat) return;
-    const projectId = getProjectId(activeChat);
+    const projectId = getProjectId(activeChat) || activeChatContext;
     const partnerId = getPartnerId(activeChat);
     const textToSend = messageText.trim();
     const newMsg = {
@@ -60,8 +92,40 @@ export default function ChatView({ currentUser, users, role, messages, setMessag
     }
   };
 
-  const activePartner = activeChat ? users.find(u => u.id === getPartnerId(activeChat)) : null;
-  const activeProject = activeChatContext ? projects.find(p => p.id === activeChatContext) : null;
+  const activeProjectId = activeChatContext || (activeChat ? getProjectId(activeChat) : null);
+  const activeProject = activeProjectId && Array.isArray(projects) ? projects.find(p => p.id === activeProjectId) : null;
+
+  const partnerId = activeChat ? getPartnerId(activeChat) : null;
+  let activePartner = partnerId && Array.isArray(users) ? users.find(u => u.id === partnerId) : null;
+
+  // Resilient fallback if partner is not directly registered in users array yet
+  if (!activePartner && activeChat) {
+    if (activeProject) {
+      if (role === 'student') {
+        activePartner = {
+          id: activeProject.umkmId || partnerId || 'umkm_partner',
+          name: activeProject.umkmName || 'Mitra UMKM',
+          role: 'umkm'
+        };
+      } else {
+        const applicant = activeProject.applicants?.find(a => partnerId ? a.studentId === partnerId : a.studentId !== currentUser?.id);
+        if (applicant) {
+          activePartner = {
+            id: applicant.studentId,
+            name: applicant.studentName || 'Mahasiswa',
+            role: 'student'
+          };
+        }
+      }
+    }
+    if (!activePartner && partnerId) {
+      activePartner = {
+        id: partnerId,
+        name: role === 'student' ? 'Mitra UMKM' : 'Mahasiswa',
+        role: role === 'student' ? 'umkm' : 'student'
+      };
+    }
+  }
   
   // Array of safe messages
   const safeMessages = Array.isArray(messages) ? messages : [];
@@ -70,7 +134,7 @@ export default function ChatView({ currentUser, users, role, messages, setMessag
   // Build distinct chat list based on messages and activeChat
   const chatIds = new Set();
   safeMessages.forEach(m => {
-    if (m.chatId && m.chatId.includes(currentUser.id)) {
+    if (m.chatId && (m.chatId.includes(currentUser.id) || m.senderId === currentUser.id)) {
       chatIds.add(m.chatId);
     }
   });
@@ -125,14 +189,25 @@ export default function ChatView({ currentUser, users, role, messages, setMessag
         </div>
         <div className="flex-1 overflow-y-auto">
           {chatList.map(chatId => {
-            const partner = users.find(u => u.id === getPartnerId(chatId));
-            if (!partner) return null;
-            const project = projects.find(p => p.id === getProjectId(chatId));
+            const pId = getPartnerId(chatId);
+            let partner = pId && Array.isArray(users) ? users.find(u => u.id === pId) : null;
+            const projId = getProjectId(chatId);
+            const project = projId && Array.isArray(projects) ? projects.find(p => p.id === projId) : null;
+            if (!partner && project) {
+              partner = {
+                id: pId || (role === 'student' ? project.umkmId : 'partner'),
+                name: role === 'student' ? (project.umkmName || 'Mitra UMKM') : 'Mahasiswa Pelamar',
+                role: role === 'student' ? 'umkm' : 'student'
+              };
+            }
+            if (!partner) {
+              partner = { id: pId || 'partner', name: 'Mitra Diskusi', role: role === 'student' ? 'umkm' : 'student' };
+            }
             const lastMsg = safeMessages.filter(m => m.chatId === chatId).pop();
             return (
               <div 
                 key={chatId}
-                onClick={() => { setActiveChat(chatId); setActiveChatContext(getProjectId(chatId)); }}
+                onClick={() => { setActiveChat(chatId); setActiveChatContext(projId); }}
                 className={`p-4 border-b border-slate-100 cursor-pointer transition-colors ${activeChat === chatId ? 'bg-blue-50 border-l-4 border-l-blue-600' : 'hover:bg-slate-100 border-l-4 border-l-transparent'}`}
               >
                 <div className="flex justify-between items-start mb-1">

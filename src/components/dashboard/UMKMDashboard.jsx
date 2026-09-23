@@ -128,8 +128,21 @@ export default function UMKMDashboard({
   });
 
   const handleStartChat = (studentId, projectId) => {
-    setActiveChatId(`chat_${studentId}_${currentUser.id}_${projectId}`);
-    setActiveChatContext(projectId);
+    let existingChatId = null;
+    if (Array.isArray(messages)) {
+      const existingMsg = messages.find(m => 
+        m.chatId && 
+        m.chatId.includes(currentUser.id) && 
+        m.chatId.includes(studentId) &&
+        (!projectId || m.chatId.includes(projectId))
+      );
+      if (existingMsg) {
+        existingChatId = existingMsg.chatId;
+      }
+    }
+    const finalChatId = existingChatId || `chat::${studentId}::${currentUser.id}::${projectId || 'general'}`;
+    setActiveChatId(finalChatId);
+    setActiveChatContext(projectId || null);
     setIsChatOpen(true);
     if (onStartChat) onStartChat(studentId, projectId);
   };
@@ -624,6 +637,9 @@ export default function UMKMDashboard({
                   setActiveTab('dompet');
                 } else if (notif.actionType === 'open_umkm_services') {
                   setActiveTab('katalog_jasa');
+                } else if (notif.actionType === 'open_chat' && notif.contextId) {
+                  setActiveChatId(notif.contextId);
+                  setIsChatOpen(true);
                 } else if (notif.actionType === 'open_profile') {
                   setActiveTab('profil');
                   if (!currentUser.verified && notif.type === 'verification_rejected') {

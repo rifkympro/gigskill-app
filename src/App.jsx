@@ -19,7 +19,43 @@ import VerifyCertificatePage from './components/verification/VerifyCertificatePa
 import CertificateModal from './components/dashboard/CertificateModal.jsx';
 
 export default function App() {
-  const [currentPage, setCurrentPage] = useState('landing');
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem('gigskill_current_user');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.id) return parsed;
+      }
+    } catch (e) {}
+    return null;
+  });
+
+  const [currentPage, setCurrentPage] = useState(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const certParam = params.get('cert');
+        const savedUserStr = localStorage.getItem('gigskill_current_user');
+        const savedUser = savedUserStr ? JSON.parse(savedUserStr) : null;
+
+        // If user is already logged in, ALWAYS restore dashboard on refresh
+        if (savedUser && savedUser.role) {
+          if (certParam) {
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+          if (savedUser.role === 'admin') return 'adminDashboard';
+          if (savedUser.role === 'umkm') return 'umkmDashboard';
+          if (savedUser.role === 'student') return 'studentDashboard';
+        }
+
+        // If NOT logged in, but certParam exists in URL, go to verify-cert
+        if (certParam) {
+          return 'verify-cert';
+        }
+      }
+    } catch (e) {}
+    return 'landing';
+  });
   const [users, setUsers] = React.useState(() => {
     const saved = localStorage.getItem('gigskill_users');
     let parsedUsers = saved ? JSON.parse(saved) : initialUsers;
@@ -197,15 +233,38 @@ export default function App() {
         const certParam = params.get('cert');
         if (certParam) {
           setVerifyCertCode(certParam);
-          setCurrentPage('verify-cert');
-        } else if (window.location.pathname.includes('/verify')) {
+          // If already logged in, stay on dashboard and clean URL query param
+          if (currentUser) {
+            window.history.replaceState({}, document.title, window.location.pathname);
+          } else {
+            setCurrentPage('verify-cert');
+          }
+        } else if (window.location.pathname.includes('/verify') && !currentUser) {
           setCurrentPage('verify-cert');
         }
       }
     } catch (e) {
       console.warn('URL parsing error:', e);
     }
-  }, []);
+  }, [currentUser]);
+
+  React.useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem('gigskill_current_user', JSON.stringify(currentUser));
+    } else {
+      localStorage.removeItem('gigskill_current_user');
+    }
+  }, [currentUser]);
+
+  // Keep currentUser synced if user balance/profile changes in users list
+  React.useEffect(() => {
+    if (currentUser) {
+      const freshUser = users.find(u => u.id === currentUser.id);
+      if (freshUser && JSON.stringify(freshUser) !== JSON.stringify(currentUser)) {
+        setCurrentUser(freshUser);
+      }
+    }
+  }, [users]);
 
   React.useEffect(() => {
     localStorage.setItem('gigskill_users', JSON.stringify(users));
@@ -233,7 +292,6 @@ export default function App() {
   React.useEffect(() => {
     localStorage.setItem('gigskill_platform_profits', JSON.stringify(platformProfits));
   }, [platformProfits]);
-  const [currentUser, setCurrentUser] = useState(null);
 
   const sendNotification = (notifData) => {
     const newNotif = {
@@ -283,6 +341,11 @@ export default function App() {
   });
 
   const navigateTo = (page) => {
+    try {
+      if (typeof window !== 'undefined' && page !== 'verify-cert' && window.location.search) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    } catch (e) {}
     setCurrentPage(page);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -360,16 +423,19 @@ export default function App() {
 
     if (user) {
       setCurrentUser(user);
+      localStorage.setItem('gigskill_current_user', JSON.stringify(user));
+
+      try {
+        if (typeof window !== 'undefined' && window.location.search) {
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      } catch (e) {}
 
       if (user.role === 'student') {
         navigateTo('studentDashboard');
-      }
-
-      if (user.role === 'umkm') {
+      } else if (user.role === 'umkm') {
         navigateTo('umkmDashboard');
-      }
-
-      if (user.role === 'admin') {
+      } else if (user.role === 'admin') {
         navigateTo('adminDashboard');
       }
 
@@ -388,7 +454,13 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    try {
+      if (typeof window !== 'undefined' && window.location.search) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    } catch (e) {}
     setCurrentUser(null);
+    localStorage.removeItem('gigskill_current_user');
     navigateTo('landing');
     showToast('Berhasil keluar dari akun', 'success');
   };
