@@ -29,6 +29,7 @@ import {
   GraduationCap
 } from 'lucide-react';
 import NotificationBell from '../common/NotificationBell.jsx';
+import { compressImage } from '../../utils/imageCompressor.js';
 
 export default function AdminDashboard({
   currentUser,
@@ -418,18 +419,20 @@ export default function AdminDashboard({
   };
 
   // Handle file select for proof
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const file = e.target.files[0];
     if (file) {
-      if (file.size > 1.5 * 1024 * 1024) {
-        showToast(`Perhatian: Ukuran file bukti ${(file.size / (1024 * 1024)).toFixed(1)}MB cukup besar. Disarankan di bawah 1.5MB agar penyimpanan browser optimal.`, 'warning');
-      }
       setProofFileName(file.name);
-      const reader = new FileReader();
-      reader.onload = () => {
-        setProofFileUrl(reader.result);
-      };
-      reader.readAsDataURL(file);
+      try {
+        const compressed = await compressImage(file, { maxWidth: 1200, quality: 0.75 });
+        setProofFileUrl(compressed);
+      } catch (err) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          setProofFileUrl(reader.result);
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 

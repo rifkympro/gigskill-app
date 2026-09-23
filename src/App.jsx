@@ -18,6 +18,7 @@ import AdminDashboard from './components/dashboard/AdminDashboard.jsx';
 import VerifyCertificatePage from './components/verification/VerifyCertificatePage.jsx';
 import CertificateModal from './components/dashboard/CertificateModal.jsx';
 import { registerWithFirebase, loginWithFirebase, logoutFromFirebase, subscribeToCloudUsers } from './services/authService.js';
+import { subscribeToCollection, saveDocToCloud, seedIfEmpty } from './services/firestoreService.js';
 import { db } from './firebase.js';
 import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
 
@@ -271,14 +272,14 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // Sinkronisasi realtime daftar pengguna dari Cloud Firestore ke state aplikasi
+  // 1. Sinkronisasi realtime daftar pengguna dari Cloud Firestore ke state aplikasi
   React.useEffect(() => {
     const unsubscribe = subscribeToCloudUsers((cloudUsers) => {
       if (cloudUsers && cloudUsers.length > 0) {
         setUsers(prevUsers => {
           let updated = [...prevUsers];
           cloudUsers.forEach(cu => {
-            const index = updated.findIndex(u => u.id === cu.id || u.email.toLowerCase() === cu.email.toLowerCase());
+            const index = updated.findIndex(u => u.id === cu.id || (u.email && cu.email && u.email.toLowerCase() === cu.email.toLowerCase()));
             if (index >= 0) {
               updated[index] = { ...updated[index], ...cu };
             } else {
@@ -292,6 +293,102 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // 2. Sinkronisasi realtime Projects dari Cloud Firestore
+  React.useEffect(() => {
+    seedIfEmpty('projects', initialProjects);
+    const unsub = subscribeToCollection('projects', (cloudProjects) => {
+      if (cloudProjects && cloudProjects.length > 0) {
+        setProjects(prev => {
+          const map = new Map();
+          prev.forEach(p => map.set(p.id, p));
+          cloudProjects.forEach(cp => map.set(cp.id, { ...map.get(cp.id), ...cp }));
+          return Array.from(map.values());
+        });
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  // 3. Sinkronisasi realtime Messages (Chat) dari Cloud Firestore
+  React.useEffect(() => {
+    const unsub = subscribeToCollection('messages', (cloudMessages) => {
+      if (cloudMessages && cloudMessages.length > 0) {
+        setMessages(prev => {
+          const map = new Map();
+          prev.forEach(m => map.set(m.id, m));
+          cloudMessages.forEach(cm => map.set(cm.id, { ...map.get(cm.id), ...cm }));
+          return Array.from(map.values()).sort((a, b) => {
+            const timeA = a.createdAt || a.id;
+            const timeB = b.createdAt || b.id;
+            return timeA.localeCompare(timeB);
+          });
+        });
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  // 4. Sinkronisasi realtime Student Services & Orders dari Cloud Firestore
+  React.useEffect(() => {
+    seedIfEmpty('services', initialStudentServices);
+    const unsubServices = subscribeToCollection('services', (cloudServices) => {
+      if (cloudServices && cloudServices.length > 0) {
+        setStudentServices(prev => {
+          const map = new Map();
+          prev.forEach(s => map.set(s.id, s));
+          cloudServices.forEach(cs => map.set(cs.id, { ...map.get(cs.id), ...cs }));
+          return Array.from(map.values());
+        });
+      }
+    });
+
+    const unsubOrders = subscribeToCollection('service_orders', (cloudOrders) => {
+      if (cloudOrders && cloudOrders.length > 0) {
+        setServiceOrders(prev => {
+          const map = new Map();
+          prev.forEach(o => map.set(o.id, o));
+          cloudOrders.forEach(co => map.set(co.id, { ...map.get(co.id), ...co }));
+          return Array.from(map.values());
+        });
+      }
+    });
+
+    return () => {
+      unsubServices();
+      unsubOrders();
+    };
+  }, []);
+
+  // 5. Sinkronisasi realtime Transactions & Notifications dari Cloud Firestore
+  React.useEffect(() => {
+    const unsubTx = subscribeToCollection('transactions', (cloudTx) => {
+      if (cloudTx && cloudTx.length > 0) {
+        setTransactions(prev => {
+          const map = new Map();
+          prev.forEach(t => map.set(t.id, t));
+          cloudTx.forEach(ct => map.set(ct.id, { ...map.get(ct.id), ...ct }));
+          return Array.from(map.values()).sort((a, b) => (b.date || b.id).localeCompare(a.date || a.id));
+        });
+      }
+    });
+
+    const unsubNotifs = subscribeToCollection('notifications', (cloudNotifs) => {
+      if (cloudNotifs && cloudNotifs.length > 0) {
+        setNotifications(prev => {
+          const map = new Map();
+          prev.forEach(n => map.set(n.id, n));
+          cloudNotifs.forEach(cn => map.set(cn.id, { ...map.get(cn.id), ...cn }));
+          return Array.from(map.values()).sort((a, b) => (b.id || '').localeCompare(a.id || ''));
+        });
+      }
+    });
+
+    return () => {
+      unsubTx();
+      unsubNotifs();
+    };
+  }, []);
+
   // Keep currentUser synced if user balance/profile changes in users list
   React.useEffect(() => {
     if (currentUser) {
@@ -302,6 +399,77 @@ export default function App() {
     }
   }, [users]);
 
+  // Sync perubahan users ke Cloud Firestore
+  const prevUsersRef = React.useRef(users);
+  React.useEffect(() => {
+    users.forEach(u => {
+      if (u && u.id) {
+        const prevU = prevUsersRef.current.find(old => old.id === u.id);
+        if (!prevU || JSON.stringify(prevU) !== JSON.stringify(u)) {
+          saveDocToCloud('users', u.id, u);
+        }
+      }
+    });
+    prevUsersRef.current = users;
+  }, [users]);
+
+  // Sync perubahan projects ke Cloud Firestore
+  const prevProjectsRef = React.useRef(projects);
+  React.useEffect(() => {
+    projects.forEach(p => {
+      if (p && p.id) {
+        const prevP = prevProjectsRef.current.find(old => old.id === p.id);
+        if (!prevP || JSON.stringify(prevP) !== JSON.stringify(p)) {
+          saveDocToCloud('projects', p.id, p);
+        }
+      }
+    });
+    prevProjectsRef.current = projects;
+  }, [projects]);
+
+  // Sync perubahan transactions ke Cloud Firestore
+  const prevTxRef = React.useRef(transactions);
+  React.useEffect(() => {
+    transactions.forEach(t => {
+      if (t && t.id) {
+        const prevT = prevTxRef.current.find(old => old.id === t.id);
+        if (!prevT || JSON.stringify(prevT) !== JSON.stringify(t)) {
+          saveDocToCloud('transactions', t.id, t);
+        }
+      }
+    });
+    prevTxRef.current = transactions;
+  }, [transactions]);
+
+  // Sync perubahan student services ke Cloud Firestore
+  const prevServicesRef = React.useRef(studentServices);
+  React.useEffect(() => {
+    studentServices.forEach(s => {
+      if (s && s.id) {
+        const prevS = prevServicesRef.current.find(old => old.id === s.id);
+        if (!prevS || JSON.stringify(prevS) !== JSON.stringify(s)) {
+          saveDocToCloud('services', s.id, s);
+        }
+      }
+    });
+    prevServicesRef.current = studentServices;
+  }, [studentServices]);
+
+  // Sync perubahan service orders ke Cloud Firestore
+  const prevOrdersRef = React.useRef(serviceOrders);
+  React.useEffect(() => {
+    serviceOrders.forEach(o => {
+      if (o && o.id) {
+        const prevO = prevOrdersRef.current.find(old => old.id === o.id);
+        if (!prevO || JSON.stringify(prevO) !== JSON.stringify(o)) {
+          saveDocToCloud('service_orders', o.id, o);
+        }
+      }
+    });
+    prevOrdersRef.current = serviceOrders;
+  }, [serviceOrders]);
+
+  // LocalStorage persistence (sebagai offline cache / fallback cadangan)
   React.useEffect(() => {
     safeSetLocalStorage('gigskill_users', JSON.stringify(users));
   }, [users]);
@@ -338,6 +506,7 @@ export default function App() {
       ...notifData
     };
     setNotifications(prev => [newNotif, ...prev]);
+    saveDocToCloud('notifications', newNotif.id, newNotif);
   };
 
   const handleMarkNotificationAsRead = (notifId) => {

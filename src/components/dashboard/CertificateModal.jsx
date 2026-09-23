@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { Award, CheckCircle2, Download, Printer, Share2, X, Star, ShieldCheck, Building2, User, Calendar, ExternalLink } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Award, CheckCircle2, Download, Printer, Share2, X, Star, ShieldCheck, Building2, User, Calendar, Image as ImageIcon } from 'lucide-react';
 import QRCode from 'qrcode';
 
 export default function CertificateModal({ project, student, umkm, onClose }) {
   const [copied, setCopied] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState('');
+  const [isExporting, setIsExporting] = useState(false);
 
   if (!project) return null;
 
@@ -12,10 +13,13 @@ export default function CertificateModal({ project, student, umkm, onClose }) {
   const certNumber = `GS-CERT/2026/${project.id.toUpperCase()}-${student?.id?.toUpperCase() || 'STD'}`;
   const verifyUrl = `${origin}/?cert=${encodeURIComponent(certNumber)}`;
   const completionDate = project.completedDate || '21 September 2026';
+  const studentName = student?.name || 'Mahasiswa GigSkill';
+  const studentUniv = student?.univ || 'Mahasiswa Terverifikasi';
+  const umkmName = project.umkmName || umkm?.name || 'Mitra UMKM';
 
   useEffect(() => {
     QRCode.toDataURL(verifyUrl, {
-      width: 200,
+      width: 250,
       margin: 1,
       color: {
         dark: '#0f172a',
@@ -36,6 +40,244 @@ export default function CertificateModal({ project, student, umkm, onClose }) {
     setTimeout(() => setCopied(false), 2500);
   };
 
+  // Export sertifikat langsung sebagai Gambar HD (PNG) menggunakan Canvas
+  const handleDownloadImage = async () => {
+    try {
+      setIsExporting(true);
+
+      const canvas = document.createElement('canvas');
+      // Resolusi tinggi 1920 x 1280 (3:2 landscape)
+      canvas.width = 1920;
+      canvas.height = 1280;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas not supported');
+
+      // 1. Background Cream Elegan
+      const bgGrad = ctx.createLinearGradient(0, 0, 1920, 1280);
+      bgGrad.addColorStop(0, '#fdfbf7');
+      bgGrad.addColorStop(0.5, '#ffffff');
+      bgGrad.addColorStop(1, '#f8f4ec');
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(0, 0, 1920, 1280);
+
+      // 2. Border Ganda Emas/Amber
+      ctx.strokeStyle = '#b45309';
+      ctx.lineWidth = 14;
+      ctx.strokeRect(40, 40, 1840, 1200);
+
+      ctx.strokeStyle = '#d97706';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(65, 65, 1790, 1150);
+
+      // Ornamen Sudut
+      const cornerSize = 50;
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = '#92400e';
+      // Kiri Atas
+      ctx.beginPath(); ctx.moveTo(50, 50 + cornerSize); ctx.lineTo(50, 50); ctx.lineTo(50 + cornerSize, 50); ctx.stroke();
+      // Kanan Atas
+      ctx.beginPath(); ctx.moveTo(1870 - cornerSize, 50); ctx.lineTo(1870, 50); ctx.lineTo(1870, 50 + cornerSize); ctx.stroke();
+      // Kiri Bawah
+      ctx.beginPath(); ctx.moveTo(50, 1230 - cornerSize); ctx.lineTo(50, 1230); ctx.lineTo(50 + cornerSize, 1230); ctx.stroke();
+      // Kanan Bawah
+      ctx.beginPath(); ctx.moveTo(1870 - cornerSize, 1230); ctx.lineTo(1870, 1230); ctx.lineTo(1870, 1230 - cornerSize); ctx.stroke();
+
+      // 3. Watermark
+      ctx.save();
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.03)';
+      ctx.font = '900 240px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('GIGSKILL', 960, 640);
+      ctx.restore();
+
+      // 4. Header Badge
+      ctx.fillStyle = '#1e3a8a';
+      ctx.beginPath();
+      ctx.roundRect(710, 100, 500, 46, 23);
+      ctx.fill();
+
+      ctx.fillStyle = '#fef08a';
+      ctx.font = 'bold 20px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('★ GIGSKILL VERIFIED MICRO-CREDENTIAL ★', 960, 131);
+
+      // 5. Judul Sertifikat
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 58px serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('SERTIFIKAT PENGALAMAN KERJA', 960, 220);
+
+      ctx.fillStyle = '#64748b';
+      ctx.font = 'bold 20px monospace';
+      ctx.fillText(`NO. DOKUMEN: ${certNumber}`, 960, 265);
+
+      // 6. Nama Penerima
+      ctx.fillStyle = '#475569';
+      ctx.font = 'italic 24px serif';
+      ctx.fillText('Sertifikat ini secara sah dan resmi diberikan kepada:', 960, 340);
+
+      ctx.fillStyle = '#1e3a8a';
+      ctx.font = 'bold 64px serif';
+      ctx.fillText(studentName, 960, 430);
+
+      // Garis bawah nama
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(560, 455);
+      ctx.lineTo(1360, 455);
+      ctx.stroke();
+
+      ctx.fillStyle = '#334155';
+      ctx.font = '600 24px sans-serif';
+      ctx.fillText(`${studentUniv} ${student?.semester ? `• Semester ${student.semester}` : ''}`, 960, 495);
+
+      // 7. Narasi
+      ctx.fillStyle = '#475569';
+      ctx.font = '22px sans-serif';
+      ctx.fillText('Atas dedikasi dan keberhasilan dalam menyelesaikan proyek kerja nyata secara profesional pada platform GigSkill', 960, 555);
+      ctx.fillText(`bekerja sama dengan mitra usaha: ${umkmName}`, 960, 590);
+
+      // 8. Box Proyek
+      ctx.fillStyle = '#f8fafc';
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(460, 630, 1000, 190, 20);
+      ctx.fill();
+      ctx.stroke();
+
+      // Kategori Proyek
+      ctx.fillStyle = '#1d4ed8';
+      ctx.font = 'bold 18px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(`${(project.category || 'Pekerjaan Jasa').toUpperCase()} • ${(project.type || 'Online').toUpperCase()}`, 500, 675);
+
+      // Judul Proyek
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 30px sans-serif';
+      const truncatedTitle = project.title && project.title.length > 55 ? project.title.substring(0, 52) + '...' : project.title;
+      ctx.fillText(truncatedTitle, 500, 720);
+
+      // Mitra UMKM
+      ctx.fillStyle = '#475569';
+      ctx.font = '22px sans-serif';
+      ctx.fillText(`Mitra UMKM: ${umkmName}`, 500, 765);
+
+      // Status Badge di dalam box
+      ctx.fillStyle = '#059669';
+      ctx.beginPath();
+      ctx.roundRect(1260, 665, 160, 40, 12);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 18px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('✓ Sukses Selesai', 1340, 691);
+
+      // 9. QR Code
+      if (qrDataUrl) {
+        const qrImg = new Image();
+        await new Promise((res) => {
+          qrImg.onload = res;
+          qrImg.onerror = res;
+          qrImg.src = qrDataUrl;
+        });
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(890, 870, 140, 140);
+        ctx.strokeStyle = '#cbd5e1';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(890, 870, 140, 140);
+        ctx.drawImage(qrImg, 895, 875, 130, 130);
+
+        ctx.fillStyle = '#64748b';
+        ctx.font = '16px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('Scan to Verify', 960, 1035);
+        ctx.fillStyle = '#2563eb';
+        ctx.font = 'bold 16px sans-serif';
+        ctx.fillText('www.gigskill.web.id', 960, 1060);
+      }
+
+      // 10. Tanda Tangan GigSkill (Kiri)
+      ctx.save();
+      // Cap bulat
+      ctx.strokeStyle = '#1e3a8a';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(600, 930, 45, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#1e3a8a';
+      ctx.font = 'bold 15px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('VERIFIED', 600, 925);
+      ctx.fillText('GIGSKILL', 600, 945);
+
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(480, 1000);
+      ctx.lineTo(720, 1000);
+      ctx.stroke();
+
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 22px sans-serif';
+      ctx.fillText('Direksi GigSkill', 600, 1030);
+      ctx.fillStyle = '#64748b';
+      ctx.font = '18px sans-serif';
+      ctx.fillText('Platform Verifikasi', 600, 1058);
+      ctx.restore();
+
+      // 11. Tanda Tangan UMKM (Kanan)
+      ctx.save();
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'italic bold 32px serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(umkmName, 1320, 950);
+
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(1200, 1000);
+      ctx.lineTo(1440, 1000);
+      ctx.stroke();
+
+      ctx.font = 'bold 22px sans-serif';
+      ctx.fillText(umkmName, 1320, 1030);
+      ctx.fillStyle = '#64748b';
+      ctx.font = '18px sans-serif';
+      ctx.fillText('Pemberi Kerja (Mitra UMKM)', 1320, 1058);
+      ctx.restore();
+
+      // 12. Footer Copyright
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(100, 1140);
+      ctx.lineTo(1820, 1140);
+      ctx.stroke();
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '18px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(`Tanggal Penerbitan: ${completionDate}`, 120, 1180);
+      ctx.textAlign = 'right';
+      ctx.fillText('Hak Cipta © 2026 GigSkill Indonesia • Pemberdayaan UMKM & Mahasiswa', 1800, 1180);
+
+      // Download file PNG
+      const link = document.createElement('a');
+      link.download = `Sertifikat_${studentName.replace(/\s+/g, '_')}_GigSkill.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch (err) {
+      console.error('Download certificate image error:', err);
+      // Fallback ke window.print jika canvas gagal
+      window.print();
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto print:p-0 print:bg-white">
       <div className="bg-white rounded-3xl max-w-3xl w-full shadow-2xl border border-slate-200 overflow-hidden my-auto print:shadow-none print:border-none print:max-w-none print:m-0">
@@ -52,6 +294,14 @@ export default function CertificateModal({ project, student, umkm, onClose }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={handleDownloadImage}
+              disabled={isExporting}
+              className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors"
+              title="Unduh Gambar HD (PNG)"
+            >
+              <Download size={14} /> {isExporting ? 'Memproses...' : 'Unduh PNG HD'}
+            </button>
             <button
               onClick={handlePrint}
               className="bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors"
@@ -110,10 +360,10 @@ export default function CertificateModal({ project, student, umkm, onClose }) {
               
               <div className="py-2 border-b-2 border-slate-200 inline-block min-w-[280px] sm:min-w-[420px]">
                 <h2 className="text-2xl sm:text-3xl font-extrabold text-blue-900 font-serif">
-                  {student?.name || 'Joko Subianto'}
+                  {studentName}
                 </h2>
                 <p className="text-xs sm:text-sm font-semibold text-slate-600 mt-1">
-                  {student?.univ || 'Mahasiswa Terverifikasi'} {student?.semester ? `• Semester ${student.semester}` : ''}
+                  {studentUniv} {student?.semester ? `• Semester ${student.semester}` : ''}
                 </p>
               </div>
 
@@ -133,7 +383,7 @@ export default function CertificateModal({ project, student, umkm, onClose }) {
                     </h3>
                     <p className="text-xs text-slate-600 mt-0.5 flex items-center gap-1.5 font-medium">
                       <Building2 size={13} className="text-slate-400" />
-                      Mitra UMKM: <strong>{project.umkmName || umkm?.name || 'Toko Kue Ibu Tin'}</strong>
+                      Mitra UMKM: <strong>{umkmName}</strong>
                     </p>
                   </div>
                   <div className="text-right shrink-0">
@@ -177,7 +427,6 @@ export default function CertificateModal({ project, student, umkm, onClose }) {
 
               {/* QR Code & Verification Link */}
               <div className="flex flex-col items-center">
-                {/* Real Scannable QR Code */}
                 <div className="p-1.5 bg-white border border-slate-300 rounded-xl shadow-xs">
                   {qrDataUrl ? (
                     <img 
@@ -199,11 +448,11 @@ export default function CertificateModal({ project, student, umkm, onClose }) {
               <div className="flex flex-col items-center">
                 <div className="h-14 flex items-center justify-center">
                   <div className="italic font-serif text-slate-800 text-lg font-bold">
-                    {project.umkmName || 'Toko Kue Ibu Tin'}
+                    {umkmName}
                   </div>
                 </div>
                 <div className="border-t border-slate-400 w-32 mt-2 pt-1">
-                  <p className="text-xs font-bold text-slate-800">{project.umkmName || 'Mitra UMKM'}</p>
+                  <p className="text-xs font-bold text-slate-800">{umkmName}</p>
                   <p className="text-[10px] text-slate-500">Pemberi Kerja</p>
                 </div>
               </div>
@@ -219,14 +468,21 @@ export default function CertificateModal({ project, student, umkm, onClose }) {
         {/* Modal Actions Bottom (Hidden on Print) */}
         <div className="bg-slate-50 px-6 py-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 print:hidden">
           <p className="text-xs text-slate-500 text-center sm:text-left">
-            💡 Sertifikat ini dapat dicetak sebagai PDF atau dilampirkan langsung pada CV & LinkedIn.
+            💡 Sertifikat dapat diunduh langsung sebagai Gambar HD (PNG) atau dicetak sebagai format PDF resmi.
           </p>
           <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              onClick={handleDownloadImage}
+              disabled={isExporting}
+              className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white text-xs font-bold px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-sm"
+            >
+              <Download size={14} /> {isExporting ? 'Memproses...' : 'Unduh Gambar HD (PNG)'}
+            </button>
             <button
               onClick={handlePrint}
               className="flex-1 sm:flex-none bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-sm"
             >
-              <Download size={14} /> Unduh / Simpan PDF
+              <Printer size={14} /> Cetak / PDF
             </button>
             <button
               onClick={onClose}

@@ -48,6 +48,7 @@ import CertificateModal from './CertificateModal.jsx';
 import NotificationBell from '../common/NotificationBell.jsx';
 import UMKMServicesCatalog from '../services/UMKMServicesCatalog.jsx';
 import { calculateProjectFee, FREE_FEE_THRESHOLD } from '../../utils/feeCalculator.js';
+import { compressImage } from '../../utils/imageCompressor.js';
 
 export default function UMKMDashboard({
   onLogout,
@@ -341,18 +342,18 @@ export default function UMKMDashboard({
                       type="file"
                       accept="image/*"
                       className="hidden"
-                      onChange={(e) => {
+                      onChange={async (e) => {
                         const file = e.target.files[0];
                         if (file) {
-                          if (file.size > 1.5 * 1024 * 1024 && showToast) {
-                            showToast(`Perhatian: Ukuran file ${(file.size / (1024 * 1024)).toFixed(1)}MB cukup besar. Disarankan di bawah 1.5MB agar penyimpanan browser tetap lancar.`, 'warning');
-                          }
                           setVerificationFileName(file.name);
-                          const reader = new FileReader();
-                          reader.onload = () => {
-                            setVerificationFileUrl(reader.result);
-                          };
-                          reader.readAsDataURL(file);
+                          try {
+                            const compressed = await compressImage(file, { maxWidth: 1200, quality: 0.75 });
+                            setVerificationFileUrl(compressed);
+                          } catch (err) {
+                            const reader = new FileReader();
+                            reader.onload = () => setVerificationFileUrl(reader.result);
+                            reader.readAsDataURL(file);
+                          }
                         }
                       }}
                     />

@@ -4,6 +4,7 @@ import {
   MessageCircle,
   Send
 } from 'lucide-react';
+import { saveDocToCloud } from '../../services/firestoreService.js';
 
 export default function ChatView({ currentUser, users, role, messages, setMessages, initialActiveChat, activeChatContext, projects, setActiveChatContext, isChatOpen, onClose, sendNotification }) {
   const [activeChat, setActiveChat] = React.useState(initialActiveChat);
@@ -69,15 +70,25 @@ export default function ChatView({ currentUser, users, role, messages, setMessag
     const partnerId = getPartnerId(activeChat);
     const textToSend = messageText.trim();
     const newMsg = {
-      id: 'm_' + Date.now(),
+      id: 'm_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
       chatId: activeChat,
       senderId: currentUser.id,
+      senderName: currentUser.name || '',
       text: textToSend,
       timestamp: new Date().toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'}),
-      projectId: projectId || undefined
+      projectId: projectId || null,
+      createdAt: new Date().toISOString()
     };
-    setMessages(prev => [...prev, newMsg]);
+    
+    // Update local state segera
+    setMessages(prev => {
+      if (prev.some(m => m.id === newMsg.id)) return prev;
+      return [...prev, newMsg];
+    });
     setMessageText('');
+
+    // Simpan ke Cloud Firestore agar chat muncul realtime di perangkat lawan
+    saveDocToCloud('messages', newMsg.id, newMsg);
 
     if (sendNotification && partnerId) {
       sendNotification({
