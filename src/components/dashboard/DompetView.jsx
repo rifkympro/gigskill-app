@@ -20,6 +20,74 @@ export default function DompetView({ role, currentUser, onRequestTransaction, tr
   const [accountDetail, setAccountDetail] = React.useState('');
   const [viewingReceipt, setViewingReceipt] = React.useState(null);
 
+  const getTransactionInfo = (tx) => {
+    switch (tx.type) {
+      case 'topup':
+        return {
+          title: 'Top Up Saldo',
+          isCredit: true,
+          label: tx.status === 'Disetujui' ? 'Top Up Berhasil' : (tx.status === 'Menunggu' ? 'Menunggu Verifikasi Admin' : 'Top Up Ditolak'),
+          badgeClass: tx.status === 'Disetujui' ? 'text-green-700 bg-green-100' : (tx.status === 'Menunggu' ? 'text-amber-700 bg-amber-100' : 'text-rose-700 bg-rose-100')
+        };
+      case 'withdraw':
+        return {
+          title: 'Penarikan Dana (Withdraw)',
+          isCredit: false,
+          label: tx.status === 'Disetujui' ? 'Disetujui & Ditransfer' : (tx.status === 'Menunggu' ? 'Menunggu Verifikasi Admin' : 'Ditolak & Saldo Dikembalikan'),
+          badgeClass: tx.status === 'Disetujui' ? 'text-blue-700 bg-blue-100' : (tx.status === 'Menunggu' ? 'text-amber-700 bg-amber-100' : 'text-rose-700 bg-rose-100')
+        };
+      case 'project_escrow':
+        return {
+          title: 'Alokasi Escrow Proyek',
+          isCredit: false,
+          label: 'Escrow Platform',
+          badgeClass: 'text-indigo-700 bg-indigo-100'
+        };
+      case 'service_order_escrow':
+        return {
+          title: 'Pembayaran Pesanan Jasa',
+          isCredit: false,
+          label: 'Escrow Pesanan',
+          badgeClass: 'text-indigo-700 bg-indigo-100'
+        };
+      case 'refund_project':
+        return {
+          title: 'Refund Escrow Proyek',
+          isCredit: true,
+          label: 'Dana Dikembalikan',
+          badgeClass: 'text-emerald-700 bg-emerald-100'
+        };
+      case 'refund_service':
+        return {
+          title: 'Refund Pesanan Jasa',
+          isCredit: true,
+          label: 'Dana Dikembalikan',
+          badgeClass: 'text-emerald-700 bg-emerald-100'
+        };
+      case 'earning_project':
+        return {
+          title: 'Honor Proyek Selesai',
+          isCredit: true,
+          label: 'Honor Masuk',
+          badgeClass: 'text-green-700 bg-green-100'
+        };
+      case 'earning_service':
+        return {
+          title: 'Honor Jasa Selesai',
+          isCredit: true,
+          label: 'Honor Masuk',
+          badgeClass: 'text-green-700 bg-green-100'
+        };
+      default:
+        return {
+          title: tx.type || 'Mutasi Dompet',
+          isCredit: !String(tx.type || '').includes('withdraw') && !String(tx.type || '').includes('escrow'),
+          label: tx.status === 'Disetujui' ? 'Selesai' : (tx.status || 'Berhasil'),
+          badgeClass: 'text-slate-700 bg-slate-100'
+        };
+    }
+  };
+
   const myTransactions = transactions.filter(t => t.userId === currentUser.id);
 
   const formatRupiah = (angka) => {
@@ -87,100 +155,96 @@ export default function DompetView({ role, currentUser, onRequestTransaction, tr
           </div>
         ) : (
           <div className="space-y-4">
-            {myTransactions.map(tx => (
-              <div key={tx.id} className="p-5 bg-slate-50 border border-slate-200/80 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div className="space-y-1.5 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-extrabold text-slate-900 text-base">
-                      {tx.type === 'topup' ? 'Top Up Saldo' : 'Penarikan Dana (Withdraw)'}
-                    </span>
-                    
-                    {tx.status === 'Disetujui' && (
-                      <span className="text-xs font-bold text-green-700 bg-green-100 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                        <CheckCircle2 size={13} /> {tx.type === 'topup' ? 'Top Up Berhasil' : 'Disetujui & Ditransfer'}
+            {myTransactions.map(tx => {
+              const info = getTransactionInfo(tx);
+              const isCredit = info.isCredit;
+
+              return (
+                <div key={tx.id} className="p-5 bg-slate-50 border border-slate-200/80 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <div className="space-y-1.5 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-extrabold text-slate-900 text-base">
+                        {info.title}
                       </span>
-                    )}
-                    {tx.status === 'Menunggu' && (
-                      <span className="text-xs font-bold text-amber-700 bg-amber-100 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                        <Clock size={13} /> Menunggu Verifikasi Admin
+                      
+                      <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 ${info.badgeClass}`}>
+                        {tx.status === 'Disetujui' && <CheckCircle2 size={13} />}
+                        {tx.status === 'Menunggu' && <Clock size={13} />}
+                        {tx.status === 'Ditolak' && <XCircle size={13} />}
+                        {info.label}
                       </span>
-                    )}
+                    </div>
+
+                    <p className="text-xs text-slate-500">
+                      <span className="font-medium text-slate-700">{tx.accountDetails || (isCredit ? 'Penerimaan Saldo' : 'Pengeluaran Saldo')}</span> • {tx.date}
+                    </p>
+
+                    {/* Reject Note */}
                     {tx.status === 'Ditolak' && (
-                      <span className="text-xs font-bold text-rose-700 bg-rose-100 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                        <XCircle size={13} /> {tx.type === 'withdraw' ? 'Ditolak & Dana Dikembalikan' : 'Top Up Ditolak'}
-                      </span>
+                      <div className="mt-2 p-3.5 bg-rose-50 rounded-2xl border border-rose-200 text-xs text-rose-800 space-y-1.5">
+                        <div className="flex items-center gap-1.5 font-bold text-rose-900">
+                          <AlertCircle size={14} className="text-rose-600 shrink-0" />
+                          <span>Alasan Penolakan dari Admin:</span>
+                        </div>
+                        <p className="text-slate-700 pl-5 leading-relaxed">
+                          {tx.rejectReason || (tx.type === 'withdraw' ? 'Nomor rekening tidak valid atau transfer gagal.' : 'Bukti mutasi transfer belum terverifikasi oleh Admin.')}
+                        </p>
+                        {tx.type === 'withdraw' && (
+                          <div className="pl-5 pt-1">
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100/90 border border-emerald-300 px-2.5 py-1 rounded-lg">
+                              <CheckCircle2 size={12} className="text-emerald-700" />
+                              Dana Rp {Number(tx.amount).toLocaleString('id-ID')} telah otomatis dikembalikan ke saldo aktif dompet Anda
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Pending Info */}
+                    {tx.status === 'Menunggu' && (
+                      <p className="text-xs text-amber-800 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200/80 inline-block font-medium">
+                        {tx.type === 'withdraw'
+                          ? 'Saldo telah dipotong sementara. Admin sedang memvalidasi rekening & memproses transfer dana Anda.'
+                          : 'Permintaan top up sedang diverifikasi oleh Admin. Saldo akan otomatis bertambah setelah transfer divalidasi.'}
+                      </p>
                     )}
                   </div>
 
-                  <p className="text-xs text-slate-500">
-                    {tx.type === 'withdraw' ? 'Rekening Tujuan:' : 'Rekening Pengirim:'} <span className="font-medium text-slate-700">{tx.accountDetails}</span> • {tx.date}
-                  </p>
-
-                  {/* Reject Note */}
-                  {tx.status === 'Ditolak' && (
-                    <div className="mt-2 p-3.5 bg-rose-50 rounded-2xl border border-rose-200 text-xs text-rose-800 space-y-1.5">
-                      <div className="flex items-center gap-1.5 font-bold text-rose-900">
-                        <AlertCircle size={14} className="text-rose-600 shrink-0" />
-                        <span>Alasan Penolakan dari Admin:</span>
+                  <div className="flex md:flex-col items-center md:items-end justify-between w-full md:w-auto gap-2 pt-2 md:pt-0 border-t md:border-t-0 border-slate-200">
+                    {tx.status === 'Ditolak' ? (
+                      <div className="text-left md:text-right">
+                        <p className="text-sm font-bold text-slate-400 line-through">
+                          {isCredit ? '+' : '-'} Rp {Number(tx.amount).toLocaleString('id-ID')}
+                        </p>
+                        {tx.type === 'withdraw' ? (
+                          <p className="text-xs font-bold text-emerald-600 flex items-center gap-1 md:justify-end">
+                            <CheckCircle2 size={13} /> Dikembalikan ke Saldo
+                          </p>
+                        ) : (
+                          <p className="text-xs font-bold text-rose-600 flex items-center gap-1 md:justify-end">
+                            <XCircle size={13} /> Top Up Dibatalkan
+                          </p>
+                        )}
                       </div>
-                      <p className="text-slate-700 pl-5 leading-relaxed">
-                        {tx.rejectReason || (tx.type === 'withdraw' ? 'Nomor rekening tidak valid atau transfer gagal.' : 'Bukti mutasi transfer belum terverifikasi oleh Admin.')}
+                    ) : (
+                      <p className={`text-lg font-extrabold ${isCredit ? 'text-emerald-600' : 'text-slate-900'}`}>
+                        {isCredit ? '+' : '-'} Rp {Number(tx.amount).toLocaleString('id-ID')}
                       </p>
-                      {tx.type === 'withdraw' && (
-                        <div className="pl-5 pt-1">
-                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100/90 border border-emerald-300 px-2.5 py-1 rounded-lg">
-                            <CheckCircle2 size={12} className="text-emerald-700" />
-                            Dana Rp {Number(tx.amount).toLocaleString('id-ID')} telah otomatis dikembalikan ke saldo aktif dompet Anda
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                    )}
 
-                  {/* Pending Info */}
-                  {tx.status === 'Menunggu' && (
-                    <p className="text-xs text-amber-800 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200/80 inline-block font-medium">
-                      {tx.type === 'withdraw'
-                        ? 'Saldo telah dipotong sementara. Admin sedang memvalidasi rekening & memproses transfer dana Anda.'
-                        : 'Permintaan top up sedang diverifikasi oleh Admin. Saldo akan otomatis bertambah setelah transfer divalidasi.'}
-                    </p>
-                  )}
+                    {/* Button View Transfer Proof for approved withdraw */}
+                    {tx.status === 'Disetujui' && (tx.proofUrl || tx.proofRef) && (
+                      <button
+                        onClick={() => setViewingReceipt(tx)}
+                        className="text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-xl hover:bg-blue-100 flex items-center gap-1.5 transition-colors"
+                      >
+                        <Eye size={14} /> Lihat Bukti Transfer
+                      </button>
+                    )}
+                  </div>
                 </div>
-
-                <div className="flex md:flex-col items-center md:items-end justify-between w-full md:w-auto gap-2 pt-2 md:pt-0 border-t md:border-t-0 border-slate-200">
-                  {tx.status === 'Ditolak' ? (
-                    <div className="text-left md:text-right">
-                      <p className="text-sm font-bold text-slate-400 line-through">
-                        {tx.type === 'withdraw' ? '-' : '+'} Rp {Number(tx.amount).toLocaleString('id-ID')}
-                      </p>
-                      {tx.type === 'withdraw' ? (
-                        <p className="text-xs font-bold text-emerald-600 flex items-center gap-1 md:justify-end">
-                          <CheckCircle2 size={13} /> Dikembalikan ke Saldo
-                        </p>
-                      ) : (
-                        <p className="text-xs font-bold text-rose-600 flex items-center gap-1 md:justify-end">
-                          <XCircle size={13} /> Top Up Dibatalkan
-                        </p>
-                      )}
-                    </div>
-                  ) : (
-                    <p className={`text-lg font-extrabold ${tx.type === 'topup' ? 'text-green-600' : 'text-slate-900'}`}>
-                      {tx.type === 'withdraw' ? '-' : '+'} Rp {Number(tx.amount).toLocaleString('id-ID')}
-                    </p>
-                  )}
-
-                  {/* Button View Transfer Proof for approved withdraw */}
-                  {tx.status === 'Disetujui' && (tx.proofUrl || tx.proofRef) && (
-                    <button
-                      onClick={() => setViewingReceipt(tx)}
-                      className="text-xs font-bold text-blue-600 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-xl hover:bg-blue-100 flex items-center gap-1.5 transition-colors"
-                    >
-                      <Eye size={14} /> Lihat Bukti Transfer
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

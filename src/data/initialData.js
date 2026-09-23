@@ -209,8 +209,8 @@ export const initialProjects = [
 ];
 
 export const initialMessages = [
-  { id: 'm_1', chatId: 'chat_u1_u2_p1', senderId: 'u1', text: 'Halo kak, saya tertarik dengan project desain logo yang diposting. Boleh saya tanya-tanya?', timestamp: '10:00' },
-  { id: 'm_2', chatId: 'chat_u1_u2_p1', senderId: 'u2', text: 'Halo Joko! Boleh, silakan, mau tanya apa?', timestamp: '10:05' }
+  { id: 'm_1', chatId: 'chat::u1::u2::p1', senderId: 'u1', text: 'Halo kak, saya tertarik dengan project desain logo yang diposting. Boleh saya tanya-tanya?', timestamp: '10:00' },
+  { id: 'm_2', chatId: 'chat::u1::u2::p1', senderId: 'u2', text: 'Halo Joko! Boleh, silakan, mau tanya apa?', timestamp: '10:05' }
 ];
 
 export const initialNotifications = [

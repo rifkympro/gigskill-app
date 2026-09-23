@@ -248,9 +248,20 @@ export default function App() {
     }
   }, [currentUser]);
 
+  const safeSetLocalStorage = (key, value) => {
+    try {
+      localStorage.setItem(key, value);
+    } catch (err) {
+      if (err && (err.name === 'QuotaExceededError' || err.code === 22 || err.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+        console.warn('LocalStorage quota reached for key:', key);
+        showToast('Peringatan: Memori penyimpanan browser hampir penuh karena ukuran file gambar. Disarankan gunakan foto dengan resolusi lebih kecil.', 'warning');
+      }
+    }
+  };
+
   React.useEffect(() => {
     if (currentUser) {
-      localStorage.setItem('gigskill_current_user', JSON.stringify(currentUser));
+      safeSetLocalStorage('gigskill_current_user', JSON.stringify(currentUser));
     } else {
       localStorage.removeItem('gigskill_current_user');
     }
@@ -267,30 +278,30 @@ export default function App() {
   }, [users]);
 
   React.useEffect(() => {
-    localStorage.setItem('gigskill_users', JSON.stringify(users));
+    safeSetLocalStorage('gigskill_users', JSON.stringify(users));
   }, [users]);
 
   React.useEffect(() => {
-    localStorage.setItem('gigskill_projects', JSON.stringify(projects));
+    safeSetLocalStorage('gigskill_projects', JSON.stringify(projects));
   }, [projects]);
 
   React.useEffect(() => {
-    localStorage.setItem('gigskill_messages', JSON.stringify(messages));
+    safeSetLocalStorage('gigskill_messages', JSON.stringify(messages));
   }, [messages]);
   React.useEffect(() => {
-    localStorage.setItem('gigskill_transactions', JSON.stringify(transactions));
+    safeSetLocalStorage('gigskill_transactions', JSON.stringify(transactions));
   }, [transactions]);
   React.useEffect(() => {
-    localStorage.setItem('gigskill_notifications', JSON.stringify(notifications));
+    safeSetLocalStorage('gigskill_notifications', JSON.stringify(notifications));
   }, [notifications]);
   React.useEffect(() => {
-    localStorage.setItem('gigskill_student_services', JSON.stringify(studentServices));
+    safeSetLocalStorage('gigskill_student_services', JSON.stringify(studentServices));
   }, [studentServices]);
   React.useEffect(() => {
-    localStorage.setItem('gigskill_service_orders', JSON.stringify(serviceOrders));
+    safeSetLocalStorage('gigskill_service_orders', JSON.stringify(serviceOrders));
   }, [serviceOrders]);
   React.useEffect(() => {
-    localStorage.setItem('gigskill_platform_profits', JSON.stringify(platformProfits));
+    safeSetLocalStorage('gigskill_platform_profits', JSON.stringify(platformProfits));
   }, [platformProfits]);
 
   const sendNotification = (notifData) => {
@@ -565,6 +576,8 @@ export default function App() {
 
   const handleUpdateApplicantStatus = (projectId, studentId, status) => {
     const project = projects.find(p => p.id === projectId);
+    const otherApplicantIds = [];
+
     setProjects(prev => prev.map(p => {
       if (p.id === projectId) {
         return {
@@ -579,7 +592,13 @@ export default function App() {
               };
             }
             if (status === 'Diterima' && (a.status === 'Pending' || a.status === 'Menunggu')) {
-              return { ...a, status: 'Ditolak', lastRejectedDate: new Date().toLocaleDateString('id-ID') };
+              otherApplicantIds.push(a.studentId);
+              return { 
+                ...a, 
+                status: 'Ditolak', 
+                rejectionReason: 'Posisi proyek telah terisi oleh pelamar lain.',
+                lastRejectedDate: new Date().toLocaleDateString('id-ID') 
+              };
             }
             return a;
           })
@@ -598,6 +617,19 @@ export default function App() {
           message: `Anda terpilih mengerjakan proyek "${project.title}" oleh ${project.umkmName}. Silakan cek tab Project Aktif dan mulai pengerjaan.`,
           actionType: 'open_project',
           contextId: project.id
+        });
+
+        // Beritahu pelamar lain bahwa posisi telah terisi
+        otherApplicantIds.forEach(otherId => {
+          sendNotification({
+            userId: otherId,
+            role: 'student',
+            type: 'application_rejected',
+            title: 'Posisi Lowongan Telah Terisi',
+            message: `Lowongan proyek "${project.title}" telah memilih kandidat lain. Terima kasih telah melamar dan silakan eksplorasi proyek menarik lainnya!`,
+            actionType: 'open_lamaran',
+            contextId: project.id
+          });
         });
       } else if (status === 'Ditolak') {
         sendNotification({
@@ -701,8 +733,23 @@ export default function App() {
           });
 
           // Catat keuntungan komisi fee platform jika > 0
+          const studentApplicant = p.applicants.find(a => a.status === 'Diterima');
+          if (studentApplicant) {
+            const earningTx = {
+              id: 'tx_' + Date.now(),
+              userId: studentApplicant.studentId,
+              userName: studentApplicant.studentName,
+              userRole: 'student',
+              type: 'earning_project',
+              amount: studentReceives,
+              status: 'Disetujui',
+              accountDetails: `Honor Penyelesaian Proyek: "${p.title}"`,
+              date: new Date().toLocaleDateString('id-ID')
+            };
+            setTransactions(prevTx => [earningTx, ...prevTx]);
+          }
+
           if (feeInfo.platformFee > 0) {
-            const studentApplicant = p.applicants.find(a => a.status === 'Diterima');
             setPlatformProfits(prevProf => [
               {
                 id: 'prof_' + Date.now(),
@@ -840,6 +887,19 @@ export default function App() {
     setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, balance: (u.balance || 0) - priceNum } : u));
     setCurrentUser(curr => curr ? { ...curr, balance: (curr.balance || 0) - priceNum } : curr);
 
+    const serviceOrderTx = {
+      id: 'tx_' + Date.now(),
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userRole: 'umkm',
+      type: 'service_order_escrow',
+      amount: priceNum,
+      status: 'Disetujui',
+      accountDetails: `Pembayaran Pesanan Jasa: "${service.title}"`,
+      date: new Date().toLocaleDateString('id-ID')
+    };
+    setTransactions(prevTx => [serviceOrderTx, ...prevTx]);
+
     const newOrder = {
       id: 'ord_' + Date.now(),
       serviceId: service.id,
@@ -952,6 +1012,19 @@ export default function App() {
     if (currentUser && currentUser.id === providerId) {
       setCurrentUser(curr => ({ ...curr, balance: (curr.balance || 0) + providerEarnings }));
     }
+
+    const earningServiceTx = {
+      id: 'tx_' + Date.now(),
+      userId: providerId,
+      userName: providerName,
+      userRole: providerRole,
+      type: 'earning_service',
+      amount: providerEarnings,
+      status: 'Disetujui',
+      accountDetails: `Honor Penyelesaian Pesanan Jasa: "${order.serviceTitle}"`,
+      date: new Date().toLocaleDateString('id-ID')
+    };
+    setTransactions(prevTx => [earningServiceTx, ...prevTx]);
 
     setServiceOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'Selesai', completedAt: new Date().toLocaleDateString('id-ID') } : o));
 

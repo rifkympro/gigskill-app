@@ -27,8 +27,29 @@ export default function RegisterPage({
     phone: ''
   });
 
+  const [phoneError, setPhoneError] = useState('');
+
   const handleSubmit = (e) => {
     e.preventDefault();
+
+    if (activeTab === 'umkm') {
+      const cleanPhone = (formData.phone || '').trim().replace(/[^0-9+]/g, '');
+      if (cleanPhone.length < 9 || cleanPhone.length > 15) {
+        setPhoneError('Nomor WhatsApp harus berupa 9-15 digit angka yang valid (contoh: 08123456789).');
+        return;
+      }
+      setPhoneError('');
+      onRegister({
+        role: activeTab,
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+        univ: formData.univ,
+        location: formData.location,
+        phone: cleanPhone
+      });
+      return;
+    }
 
     onRegister({
       role: activeTab,
@@ -211,16 +232,22 @@ export default function RegisterPage({
                     type="tel"
                     required
                     value={formData.phone}
-                    onChange={(e) =>
+                    onChange={(e) => {
                       setFormData({
                         ...formData,
                         phone: e.target.value
-                      })
-                    }
+                      });
+                      if (phoneError) setPhoneError('');
+                    }}
                     placeholder="081234567890"
                     className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-green-500 transition-all font-medium"
                   />
                 </div>
+                {phoneError && (
+                  <p className="mt-1 text-xs text-rose-600 font-semibold ml-1">
+                    {phoneError}
+                  </p>
+                )}
               </div>
             </div>
           )}

@@ -421,6 +421,9 @@ export default function AdminDashboard({
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
+      if (file.size > 1.5 * 1024 * 1024) {
+        showToast(`Perhatian: Ukuran file bukti ${(file.size / (1024 * 1024)).toFixed(1)}MB cukup besar. Disarankan di bawah 1.5MB agar penyimpanan browser optimal.`, 'warning');
+      }
       setProofFileName(file.name);
       const reader = new FileReader();
       reader.onload = () => {
@@ -440,6 +443,9 @@ export default function AdminDashboard({
   };
 
   const handleMediation = (projectId, winner) => {
+    const targetProj = projects.find(p => p.id === projectId);
+    const acceptedApplicant = targetProj?.applicants?.find(a => a.status === 'Diterima');
+
     setProjects(prev => prev.map(p => {
       if (p.id === projectId) {
         let paymentStatus = p.paymentStatus;
@@ -468,6 +474,45 @@ export default function AdminDashboard({
               return curr;
             });
           }
+
+          if (setTransactions && acceptedApplicant) {
+            const earnTx = {
+              id: 'tx_' + Date.now(),
+              userId: acceptedApplicant.studentId,
+              userName: acceptedApplicant.studentName,
+              userRole: 'student',
+              type: 'earning_project',
+              amount: budgetNum,
+              status: 'Disetujui',
+              accountDetails: `Honor Mediasi Banding Proyek: "${p.title}"`,
+              date: new Date().toLocaleDateString('id-ID')
+            };
+            setTransactions(prevTx => [earnTx, ...prevTx]);
+          }
+
+          if (sendNotification) {
+            if (acceptedApplicant) {
+              sendNotification({
+                userId: acceptedApplicant.studentId,
+                role: 'student',
+                type: 'mediation_won',
+                title: 'Banding Dimenangkan! ⚖️🎉',
+                message: `Admin memutuskan mediasi proyek "${p.title}" dimenangkan oleh Anda. Honor sebesar Rp ${budgetNum.toLocaleString('id-ID')} telah dicairkan ke saldo aktif Anda.`,
+                actionType: 'open_wallet',
+                contextId: p.id
+              });
+            }
+            sendNotification({
+              userId: p.umkmId,
+              role: 'umkm',
+              type: 'mediation_lost',
+              title: 'Hasil Mediasi Proyek ⚖️',
+              message: `Admin telah menyelesaikan mediasi proyek "${p.title}". Dana escrow diteruskan ke mahasiswa sesuai hasil peninjauan bukti kerja.`,
+              actionType: 'open_project',
+              contextId: p.id
+            });
+          }
+
           paymentStatus = 'Sudah Dibayar';
         } else if (winner === 'umkm') {
           if (p.isEscrowed) {
@@ -484,6 +529,44 @@ export default function AdminDashboard({
                 }
                 return curr;
               });
+            }
+
+            if (setTransactions) {
+              const refundTx = {
+                id: 'tx_' + Date.now(),
+                userId: p.umkmId,
+                userName: p.umkmName,
+                userRole: 'umkm',
+                type: 'refund_project',
+                amount: escrowAmt,
+                status: 'Disetujui',
+                accountDetails: `Refund Dana Escrow Hasil Mediasi: "${p.title}"`,
+                date: new Date().toLocaleDateString('id-ID')
+              };
+              setTransactions(prevTx => [refundTx, ...prevTx]);
+            }
+
+            if (sendNotification) {
+              sendNotification({
+                userId: p.umkmId,
+                role: 'umkm',
+                type: 'mediation_won',
+                title: 'Banding Diterima & Saldo Dikembalikan ⚖️💰',
+                message: `Admin memutuskan mediasi proyek "${p.title}" dimenangkan oleh UMKM. Dana escrow sebesar Rp ${escrowAmt.toLocaleString('id-ID')} telah dikembalikan penuh ke saldo Anda.`,
+                actionType: 'open_wallet',
+                contextId: p.id
+              });
+              if (acceptedApplicant) {
+                sendNotification({
+                  userId: acceptedApplicant.studentId,
+                  role: 'student',
+                  type: 'mediation_lost',
+                  title: 'Hasil Mediasi Proyek ⚖️',
+                  message: `Admin telah meninjau sengketa proyek "${p.title}" dan memutuskan pengembalian dana kepada pihak UMKM.`,
+                  actionType: 'open_project',
+                  contextId: p.id
+                });
+              }
             }
           }
         }

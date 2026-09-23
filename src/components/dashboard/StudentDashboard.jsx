@@ -423,6 +423,9 @@ export default function StudentDashboard({
                       onChange={(e) => {
                         const file = e.target.files[0];
                         if (file) {
+                          if (file.size > 1.5 * 1024 * 1024 && showToast) {
+                            showToast(`Perhatian: Ukuran file KTM ${(file.size / (1024 * 1024)).toFixed(1)}MB cukup besar. Disarankan di bawah 1.5MB agar penyimpanan browser tetap lancar.`, 'warning');
+                          }
                           setVerificationFileName(file.name);
                           const reader = new FileReader();
                           reader.onload = () => {
@@ -581,6 +584,10 @@ export default function StudentDashboard({
 
         const handleFileUpload = (e) => {
           const files = Array.from(e.target.files || []);
+          const oversized = files.filter(f => f.size > 1.5 * 1024 * 1024);
+          if (oversized.length > 0 && showToast) {
+            showToast(`Perhatian: ${oversized.length} foto memiliki ukuran cukup besar (> 1.5MB). Tetap diunggah, namun disarankan kompres resolusi foto agar performa browser optimal.`, 'warning');
+          }
           files.forEach(file => {
             const reader = new FileReader();
             reader.onload = (uploadEvent) => {

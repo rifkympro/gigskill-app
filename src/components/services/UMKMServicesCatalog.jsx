@@ -102,9 +102,27 @@ export default function UMKMServicesCatalog({
       pName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (service.tags && service.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase())));
 
-    const matchesCategory =
-      categoryFilter === 'Semua' ||
-      service.category?.toLowerCase().includes(categoryFilter.toLowerCase());
+    const catLower = (service.category || '').toLowerCase();
+    const filterLower = categoryFilter.toLowerCase();
+    
+    let matchesCategory = categoryFilter === 'Semua';
+    if (!matchesCategory) {
+      if (catLower.includes(filterLower)) {
+        matchesCategory = true;
+      } else if (filterLower.includes('desain') && (catLower.includes('grafis') || catLower.includes('logo') || catLower.includes('desain') || catLower.includes('kemasan'))) {
+        matchesCategory = true;
+      } else if (filterLower.includes('web') && (catLower.includes('it') || catLower.includes('teknologi') || catLower.includes('web') || catLower.includes('aplikasi') || catLower.includes('software'))) {
+        matchesCategory = true;
+      } else if (filterLower.includes('pemasaran') && (catLower.includes('digital') || catLower.includes('medsos') || catLower.includes('marketing') || catLower.includes('iklan') || catLower.includes('sosial') || catLower.includes('foto'))) {
+        matchesCategory = true;
+      } else if (filterLower.includes('administrasi') && (catLower.includes('suplai') || catLower.includes('data') || catLower.includes('admin') || catLower.includes('keuangan') || catLower.includes('bahan'))) {
+        matchesCategory = true;
+      } else if (filterLower.includes('video') && (catLower.includes('animasi') || catLower.includes('video') || catLower.includes('konten') || catLower.includes('promosi'))) {
+        matchesCategory = true;
+      } else if (filterLower.includes('penulisan') && (catLower.includes('naskah') || catLower.includes('konten') || catLower.includes('artikel') || catLower.includes('copywriting') || catLower.includes('tulis') || catLower.includes('terjemahan'))) {
+        matchesCategory = true;
+      }
+    }
 
     let matchesBudget = true;
     const priceNum = Number(service.price) || 0;

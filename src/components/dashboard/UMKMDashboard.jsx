@@ -157,7 +157,15 @@ export default function UMKMDashboard({
 
   const handleSaveProfile = (e) => {
     e.preventDefault();
-    onUpdateProfile(currentUser.id, editProfileData);
+    const cleanPhone = (editProfileData.phone || '').trim().replace(/[^0-9+]/g, '');
+    if (cleanPhone.length < 9 || cleanPhone.length > 15) {
+      if (showToast) showToast('Nomor HP tidak valid. Masukkan 9-15 digit angka (contoh: 08123456789).', 'error');
+      return;
+    }
+    onUpdateProfile(currentUser.id, {
+      ...editProfileData,
+      phone: cleanPhone
+    });
     setShowEditProfile(false);
   };
 
@@ -336,6 +344,9 @@ export default function UMKMDashboard({
                       onChange={(e) => {
                         const file = e.target.files[0];
                         if (file) {
+                          if (file.size > 1.5 * 1024 * 1024 && showToast) {
+                            showToast(`Perhatian: Ukuran file ${(file.size / (1024 * 1024)).toFixed(1)}MB cukup besar. Disarankan di bawah 1.5MB agar penyimpanan browser tetap lancar.`, 'warning');
+                          }
                           setVerificationFileName(file.name);
                           const reader = new FileReader();
                           reader.onload = () => {
