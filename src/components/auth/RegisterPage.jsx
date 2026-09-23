@@ -14,7 +14,8 @@ import LocationPicker from '../common/LocationPicker.jsx';
 
 export default function RegisterPage({
   onRegister,
-  navigateTo
+  navigateTo,
+  authLoading = false
 }) {
   const [activeTab, setActiveTab] = useState('student');
 
@@ -306,14 +307,22 @@ export default function RegisterPage({
 
           <button
             type="submit"
+            disabled={authLoading}
             className={
-              'w-full text-white py-4 rounded-2xl font-extrabold text-lg transition-all shadow-lg hover:-translate-y-0.5 mt-6 ' +
+              'w-full text-white py-4 rounded-2xl font-extrabold text-lg transition-all shadow-lg hover:-translate-y-0.5 mt-6 flex items-center justify-center gap-2 disabled:opacity-60 ' +
               (activeTab === 'student'
                 ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/30'
                 : 'bg-green-600 hover:bg-green-700 shadow-green-600/30')
             }
           >
-            Daftar Sekarang
+            {authLoading ? (
+              <>
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                <span>Mendaftarkan Akun...</span>
+              </>
+            ) : (
+              <span>Daftar Sekarang</span>
+            )}
           </button>
         </form>
 

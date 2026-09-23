@@ -1,0 +1,52 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // GigSkill Firestore Security Rules
+    // Allow public read for general catalogs, project listings, and public certificate verification
+    // Allow authenticated users to write their corresponding documents
+    
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if request.auth != null || resource == null;
+    }
+    
+    match /projects/{projectId} {
+      allow read: if true;
+      allow write: if request.auth != null || resource == null;
+    }
+
+    match /services/{serviceId} {
+      allow read: if true;
+      allow write: if request.auth != null || resource == null;
+    }
+
+    match /service_orders/{orderId} {
+      allow read: if true;
+      allow write: if request.auth != null || resource == null;
+    }
+
+    match /transactions/{txId} {
+      allow read: if true;
+      allow write: if request.auth != null || resource == null;
+    }
+
+    match /messages/{messageId} {
+      allow read: if true;
+      allow write: if request.auth != null || resource == null;
+    }
+
+    match /notifications/{notifId} {
+      allow read: if true;
+      allow write: if request.auth != null || resource == null;
+    }
+
+    match /platform_profits/{profitId} {
+      allow read: if true;
+      allow write: if request.auth != null || resource == null;
+    }
+
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

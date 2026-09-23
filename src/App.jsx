@@ -17,8 +17,12 @@ import UMKMDashboard from './components/dashboard/UMKMDashboard.jsx';
 import AdminDashboard from './components/dashboard/AdminDashboard.jsx';
 import VerifyCertificatePage from './components/verification/VerifyCertificatePage.jsx';
 import CertificateModal from './components/dashboard/CertificateModal.jsx';
+import { registerWithFirebase, loginWithFirebase, logoutFromFirebase } from './services/authService.js';
+import { db } from './firebase.js';
+import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
 
 export default function App() {
+  const [authLoading, setAuthLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState(() => {
     try {
       const saved = localStorage.getItem('gigskill_current_user');
@@ -382,77 +386,150 @@ export default function App() {
     }
   };
 
-  const handleRegister = (userData) => {
-    const newId = 'u_' + Date.now();
+  const handleRegister = async (userData) => {
+    setAuthLoading(true);
 
-    const newUser = {
-      ...userData,
-      id: newId,
-      balance: 0,
-      verified: false,
-      isDummy: false,
-      ...(userData.role === 'student' ? { skills: [], portfolios: [] } : {})
-    };
+    const roleName = userData.role === 'student' ? 'Mahasiswa' : 'UMKM';
 
-    setUsers([...users, newUser]);
+    // 1. Coba registrasi ke Firebase Auth + Firestore
+    try {
+      const fbResult = await registerWithFirebase(userData);
+      
+      let newUserId;
+      let finalUserData;
 
-    const roleName =
-      userData.role === 'student' ? 'Mahasiswa' : 'UMKM';
-
-    // Kirim notifikasi selamat datang ke pengguna baru
-    sendNotification({
-      userId: newId,
-      role: userData.role,
-      type: 'welcome',
-      title: 'Selamat Datang di GigSkill! 👋',
-      message: `Akun ${roleName} Anda telah dibuat. Lengkapi profil dan ajukan verifikasi berkas untuk mulai bertransaksi dengan aman.`,
-      actionType: 'open_profile'
-    });
-
-    // Kirim notifikasi ke Admin tentang pendaftaran baru
-    sendNotification({
-      userId: 'u3',
-      role: 'admin',
-      type: 'user_registered',
-      title: 'Pengguna Baru Terdaftar 👤',
-      message: `${userData.name} mendaftar sebagai ${roleName}. Menunggu verifikasi identitas.`,
-      actionType: 'open_admin_verifikasi'
-    });
-
-    showToast(
-      `Pendaftaran ${roleName} Berhasil! Silakan login.`,
-      'success'
-    );
-
-    setTimeout(() => navigateTo('login'), 1500);
-  };
-
-  const handleLogin = (email, password) => {
-    const user = users.find(
-      (u) => u.email === email && u.password === password
-    );
-
-    if (user) {
-      setCurrentUser(user);
-      localStorage.setItem('gigskill_current_user', JSON.stringify(user));
-
-      try {
-        if (typeof window !== 'undefined' && window.location.search) {
-          window.history.replaceState({}, document.title, window.location.pathname);
-        }
-      } catch (e) {}
-
-      if (user.role === 'student') {
-        navigateTo('studentDashboard');
-      } else if (user.role === 'umkm') {
-        navigateTo('umkmDashboard');
-      } else if (user.role === 'admin') {
-        navigateTo('adminDashboard');
+      if (fbResult.success) {
+        newUserId = fbResult.user.id;
+        finalUserData = {
+          ...fbResult.user,
+          password: userData.password // simpan password lokal untuk konsistensi session offline
+        };
+      } else {
+        // Jika offline atau error konfigurasi, buat akun lokal dengan fallback
+        newUserId = 'u_' + Date.now();
+        finalUserData = {
+          ...userData,
+          id: newUserId,
+          balance: 0,
+          verified: false,
+          isDummy: false,
+          createdAt: new Date().toISOString(),
+          ...(userData.role === 'student' ? { skills: [], portfolios: [] } : {})
+        };
+        console.warn('Firebase register notice, using localized profile:', fbResult.error);
       }
 
-      showToast(`Selamat datang, ${user.name}!`, 'success');
-    } else {
-      showToast('Email atau password salah!', 'error');
+      setUsers(prev => [...prev, finalUserData]);
+
+      // Kirim notifikasi selamat datang ke pengguna baru
+      sendNotification({
+        userId: newUserId,
+        role: userData.role,
+        type: 'welcome',
+        title: 'Selamat Datang di GigSkill! 👋',
+        message: `Akun ${roleName} Anda telah dibuat. Lengkapi profil dan ajukan verifikasi berkas untuk mulai bertransaksi dengan aman.`,
+        actionType: 'open_profile'
+      });
+
+      // Kirim notifikasi ke Admin tentang pendaftaran baru
+      sendNotification({
+        userId: 'u3',
+        role: 'admin',
+        type: 'user_registered',
+        title: 'Pengguna Baru Terdaftar 👤',
+        message: `${userData.name} mendaftar sebagai ${roleName}. Menunggu verifikasi identitas.`,
+        actionType: 'open_admin_verifikasi'
+      });
+
+      showToast(
+        `Pendaftaran ${roleName} Berhasil! Silakan masuk.`,
+        'success'
+      );
+
+      setTimeout(() => navigateTo('login'), 1200);
+    } catch (err) {
+      console.error('Registration caught error:', err);
+      showToast('Gagal mendaftar. Silakan periksa kembali isian form Anda.', 'error');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogin = async (email, password) => {
+    setAuthLoading(true);
+
+    try {
+      // 1. Cek dulu apakah akun demo / lokal yang sudah terdaftar
+      const localUser = users.find(
+        (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === password
+      );
+
+      if (localUser) {
+        setCurrentUser(localUser);
+        localStorage.setItem('gigskill_current_user', JSON.stringify(localUser));
+
+        try {
+          if (typeof window !== 'undefined' && window.location.search) {
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+        } catch (e) {}
+
+        if (localUser.role === 'student') {
+          navigateTo('studentDashboard');
+        } else if (localUser.role === 'umkm') {
+          navigateTo('umkmDashboard');
+        } else if (localUser.role === 'admin') {
+          navigateTo('adminDashboard');
+        }
+
+        showToast(`Selamat datang, ${localUser.name}!`, 'success');
+        return;
+      }
+
+      // 2. Jika tidak ada di lokal, verifikasi langsung dengan Firebase Auth online
+      const fbResult = await loginWithFirebase(email.trim(), password);
+
+      if (fbResult.success) {
+        const loggedUser = {
+          ...fbResult.user,
+          password: password
+        };
+
+        // Update state users jika belum ada
+        setUsers(prev => {
+          const exists = prev.find(u => u.id === loggedUser.id || u.email === loggedUser.email);
+          if (exists) {
+            return prev.map(u => (u.id === loggedUser.id || u.email === loggedUser.email) ? { ...u, ...loggedUser } : u);
+          }
+          return [...prev, loggedUser];
+        });
+
+        setCurrentUser(loggedUser);
+        localStorage.setItem('gigskill_current_user', JSON.stringify(loggedUser));
+
+        try {
+          if (typeof window !== 'undefined' && window.location.search) {
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+        } catch (e) {}
+
+        if (loggedUser.role === 'student') {
+          navigateTo('studentDashboard');
+        } else if (loggedUser.role === 'umkm') {
+          navigateTo('umkmDashboard');
+        } else if (loggedUser.role === 'admin') {
+          navigateTo('adminDashboard');
+        }
+
+        showToast(`Selamat datang, ${loggedUser.name}! (Firebase Auth)`, 'success');
+      } else {
+        showToast(fbResult.error || 'Email atau password salah!', 'error');
+      }
+    } catch (err) {
+      console.error('Login error:', err);
+      showToast('Gagal masuk. Silakan periksa koneksi internet Anda.', 'error');
+    } finally {
+      setAuthLoading(false);
     }
   };
 
@@ -464,7 +541,10 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await logoutFromFirebase();
+    } catch (e) {}
     try {
       if (typeof window !== 'undefined' && window.location.search) {
         window.history.replaceState({}, document.title, window.location.pathname);
@@ -1438,6 +1518,7 @@ export default function App() {
             handleLogin={handleLogin}
             handleQuickLogin={handleQuickLogin}
             navigateTo={navigateTo}
+            authLoading={authLoading}
           />
         )}
 
@@ -1445,6 +1526,7 @@ export default function App() {
           <RegisterPage
             onRegister={handleRegister}
             navigateTo={navigateTo}
+            authLoading={authLoading}
           />
         )}
 

@@ -9,14 +9,17 @@ import {
 export default function LoginPage({
   handleLogin,
   handleQuickLogin,
-  navigateTo
+  navigateTo,
+  authLoading = false
 }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
   const onSubmit = (e) => {
     e.preventDefault();
-    handleLogin(email, password);
+    if (!authLoading) {
+      handleLogin(email, password);
+    }
   };
 
   return (
@@ -74,9 +77,17 @@ export default function LoginPage({
 
           <button
             type="submit"
-            className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-xl transition-all shadow-md mt-2"
+            disabled={authLoading}
+            className="w-full bg-slate-900 hover:bg-slate-800 disabled:bg-slate-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-md mt-2 flex items-center justify-center gap-2"
           >
-            Masuk
+            {authLoading ? (
+              <>
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                <span>Memverifikasi Akun...</span>
+              </>
+            ) : (
+              <span>Masuk</span>
+            )}
           </button>
         </form>
 
