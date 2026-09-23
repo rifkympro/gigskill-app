@@ -18,7 +18,7 @@ import AdminDashboard from './components/dashboard/AdminDashboard.jsx';
 import VerifyCertificatePage from './components/verification/VerifyCertificatePage.jsx';
 import CertificateModal from './components/dashboard/CertificateModal.jsx';
 import { registerWithFirebase, loginWithFirebase, logoutFromFirebase, subscribeToCloudUsers } from './services/authService.js';
-import { subscribeToCollection, saveDocToCloud, seedIfEmpty } from './services/firestoreService.js';
+import { subscribeToCollection, saveDocToCloud, deleteDocFromCloud, seedIfEmpty } from './services/firestoreService.js';
 import { db } from './firebase.js';
 import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
 
@@ -399,76 +399,6 @@ export default function App() {
     }
   }, [users]);
 
-  // Sync perubahan users ke Cloud Firestore
-  const prevUsersRef = React.useRef(users);
-  React.useEffect(() => {
-    users.forEach(u => {
-      if (u && u.id) {
-        const prevU = prevUsersRef.current.find(old => old.id === u.id);
-        if (!prevU || JSON.stringify(prevU) !== JSON.stringify(u)) {
-          saveDocToCloud('users', u.id, u);
-        }
-      }
-    });
-    prevUsersRef.current = users;
-  }, [users]);
-
-  // Sync perubahan projects ke Cloud Firestore
-  const prevProjectsRef = React.useRef(projects);
-  React.useEffect(() => {
-    projects.forEach(p => {
-      if (p && p.id) {
-        const prevP = prevProjectsRef.current.find(old => old.id === p.id);
-        if (!prevP || JSON.stringify(prevP) !== JSON.stringify(p)) {
-          saveDocToCloud('projects', p.id, p);
-        }
-      }
-    });
-    prevProjectsRef.current = projects;
-  }, [projects]);
-
-  // Sync perubahan transactions ke Cloud Firestore
-  const prevTxRef = React.useRef(transactions);
-  React.useEffect(() => {
-    transactions.forEach(t => {
-      if (t && t.id) {
-        const prevT = prevTxRef.current.find(old => old.id === t.id);
-        if (!prevT || JSON.stringify(prevT) !== JSON.stringify(t)) {
-          saveDocToCloud('transactions', t.id, t);
-        }
-      }
-    });
-    prevTxRef.current = transactions;
-  }, [transactions]);
-
-  // Sync perubahan student services ke Cloud Firestore
-  const prevServicesRef = React.useRef(studentServices);
-  React.useEffect(() => {
-    studentServices.forEach(s => {
-      if (s && s.id) {
-        const prevS = prevServicesRef.current.find(old => old.id === s.id);
-        if (!prevS || JSON.stringify(prevS) !== JSON.stringify(s)) {
-          saveDocToCloud('services', s.id, s);
-        }
-      }
-    });
-    prevServicesRef.current = studentServices;
-  }, [studentServices]);
-
-  // Sync perubahan service orders ke Cloud Firestore
-  const prevOrdersRef = React.useRef(serviceOrders);
-  React.useEffect(() => {
-    serviceOrders.forEach(o => {
-      if (o && o.id) {
-        const prevO = prevOrdersRef.current.find(old => old.id === o.id);
-        if (!prevO || JSON.stringify(prevO) !== JSON.stringify(o)) {
-          saveDocToCloud('service_orders', o.id, o);
-        }
-      }
-    });
-    prevOrdersRef.current = serviceOrders;
-  }, [serviceOrders]);
-
   // LocalStorage persistence (sebagai offline cache / fallback cadangan)
   React.useEffect(() => {
     safeSetLocalStorage('gigskill_users', JSON.stringify(users));
@@ -638,17 +568,17 @@ export default function App() {
     setAuthLoading(true);
 
     try {
-      const cleanEmail = email.trim().toLowerCase();
+      const cleanEmail = (email || '').trim().toLowerCase();
 
       // 1. Cek dulu apakah akun ada di cache / data lokal
       const localUserWithEmail = users.find(
-        (u) => u.email.toLowerCase() === cleanEmail
+        (u) => u.email && u.email.toLowerCase() === cleanEmail
       );
 
       if (localUserWithEmail) {
         if (localUserWithEmail.password === password) {
           setCurrentUser(localUserWithEmail);
-          localStorage.setItem('gigskill_current_user', JSON.stringify(localUserWithEmail));
+          safeSetLocalStorage('gigskill_current_user', JSON.stringify(localUserWithEmail));
 
           try {
             if (typeof window !== 'undefined' && window.location.search) {
@@ -656,19 +586,17 @@ export default function App() {
             }
           } catch (e) {}
 
-          if (localUserWithEmail.role === 'student') {
-            navigateTo('studentDashboard');
-          } else if (localUserWithEmail.role === 'umkm') {
-            navigateTo('umkmDashboard');
-          } else if (localUserWithEmail.role === 'admin') {
-            navigateTo('adminDashboard');
-          }
+          const targetRole = localUserWithEmail.role || 'student';
+          const targetPage = targetRole === 'admin' ? 'adminDashboard' : (targetRole === 'umkm' ? 'umkmDashboard' : 'studentDashboard');
+          navigateTo(targetPage);
 
           showToast(`Selamat datang, ${localUserWithEmail.name}!`, 'success');
+          setAuthLoading(false);
           return;
         } else {
           // Email terdaftar di lokal, tetapi password salah
           showToast('Password yang Anda masukkan salah. Silakan periksa kembali.', 'error');
+          setAuthLoading(false);
           return;
         }
       }
@@ -684,15 +612,15 @@ export default function App() {
 
         // Update state users jika belum ada
         setUsers(prev => {
-          const exists = prev.find(u => u.id === loggedUser.id || u.email.toLowerCase() === loggedUser.email.toLowerCase());
+          const exists = prev.find(u => u.id === loggedUser.id || (u.email && u.email.toLowerCase() === loggedUser.email.toLowerCase()));
           if (exists) {
-            return prev.map(u => (u.id === loggedUser.id || u.email.toLowerCase() === loggedUser.email.toLowerCase()) ? { ...u, ...loggedUser } : u);
+            return prev.map(u => (u.id === loggedUser.id || (u.email && u.email.toLowerCase() === loggedUser.email.toLowerCase())) ? { ...u, ...loggedUser } : u);
           }
           return [...prev, loggedUser];
         });
 
         setCurrentUser(loggedUser);
-        localStorage.setItem('gigskill_current_user', JSON.stringify(loggedUser));
+        safeSetLocalStorage('gigskill_current_user', JSON.stringify(loggedUser));
 
         try {
           if (typeof window !== 'undefined' && window.location.search) {
@@ -700,13 +628,9 @@ export default function App() {
           }
         } catch (e) {}
 
-        if (loggedUser.role === 'student') {
-          navigateTo('studentDashboard');
-        } else if (loggedUser.role === 'umkm') {
-          navigateTo('umkmDashboard');
-        } else if (loggedUser.role === 'admin') {
-          navigateTo('adminDashboard');
-        }
+        const targetRole = loggedUser.role || 'student';
+        const targetPage = targetRole === 'admin' ? 'adminDashboard' : (targetRole === 'umkm' ? 'umkmDashboard' : 'studentDashboard');
+        navigateTo(targetPage);
 
         showToast(`Selamat datang, ${loggedUser.name}!`, 'success');
       } else {
@@ -764,8 +688,10 @@ export default function App() {
     }
 
     // Potong saldo UMKM untuk dialokasikan ke penampungan Escrow platform
-    setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, balance: Math.max(0, (u.balance || 0) - totalRequiredDeposit) } : u));
-    setCurrentUser(curr => (curr ? { ...curr, balance: Math.max(0, (curr.balance || 0) - totalRequiredDeposit) } : curr));
+    const newUmkmBalance = Math.max(0, (currentUser.balance || 0) - totalRequiredDeposit);
+    setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, balance: newUmkmBalance } : u));
+    setCurrentUser(curr => (curr ? { ...curr, balance: newUmkmBalance } : curr));
+    saveDocToCloud('users', currentUser.id, { ...currentUser, balance: newUmkmBalance });
 
     const escrowTx = {
       id: 'tx_' + Date.now(),
@@ -779,6 +705,7 @@ export default function App() {
       date: new Date().toLocaleDateString('id-ID')
     };
     setTransactions(prev => [escrowTx, ...prev]);
+    saveDocToCloud('transactions', escrowTx.id, escrowTx);
 
     const newProject = {
       id: 'p_' + Date.now(),
@@ -800,6 +727,7 @@ export default function App() {
     };
 
     setProjects([newProject, ...projects]);
+    saveDocToCloud('projects', newProject.id, newProject);
 
     sendNotification({
       userId: currentUser.id,
@@ -818,6 +746,11 @@ export default function App() {
   const handleUpdateProfile = (userId, newProfileData) => {
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, ...newProfileData } : u));
     setCurrentUser(prev => ({ ...prev, ...newProfileData }));
+
+    const targetUser = users.find(u => u.id === userId) || currentUser;
+    if (targetUser) {
+      saveDocToCloud('users', userId, { ...targetUser, ...newProfileData });
+    }
 
     // Jika user mengajukan dokumen verifikasi
     if (newProfileData.verificationDoc && newProfileData.verificationStatus === 'Pending') {
@@ -844,36 +777,35 @@ export default function App() {
 
   const handleUpdateApplicantStatus = (projectId, studentId, status) => {
     const project = projects.find(p => p.id === projectId);
+    if (!project) return;
     const otherApplicantIds = [];
 
-    setProjects(prev => prev.map(p => {
-      if (p.id === projectId) {
-        return {
-          ...p,
-          status: status === 'Diterima' ? 'Mahasiswa Terpilih' : p.status,
-          applicants: p.applicants.map(a => {
-            if (a.studentId === studentId) {
-              return {
-                ...a,
-                status,
-                lastRejectedDate: status === 'Ditolak' ? new Date().toLocaleDateString('id-ID') : a.lastRejectedDate
-              };
-            }
-            if (status === 'Diterima' && (a.status === 'Pending' || a.status === 'Menunggu')) {
-              otherApplicantIds.push(a.studentId);
-              return { 
-                ...a, 
-                status: 'Ditolak', 
-                rejectionReason: 'Posisi proyek telah terisi oleh pelamar lain.',
-                lastRejectedDate: new Date().toLocaleDateString('id-ID') 
-              };
-            }
-            return a;
-          })
-        };
-      }
-      return p;
-    }));
+    const updatedProject = {
+      ...project,
+      status: status === 'Diterima' ? 'Mahasiswa Terpilih' : project.status,
+      applicants: (project.applicants || []).map(a => {
+        if (a.studentId === studentId) {
+          return {
+            ...a,
+            status,
+            lastRejectedDate: status === 'Ditolak' ? new Date().toLocaleDateString('id-ID') : a.lastRejectedDate
+          };
+        }
+        if (status === 'Diterima' && (a.status === 'Pending' || a.status === 'Menunggu')) {
+          otherApplicantIds.push(a.studentId);
+          return { 
+            ...a, 
+            status: 'Ditolak', 
+            rejectionReason: 'Posisi proyek telah terisi oleh pelamar lain.',
+            lastRejectedDate: new Date().toLocaleDateString('id-ID') 
+          };
+        }
+        return a;
+      })
+    };
+
+    setProjects(prev => prev.map(p => p.id === projectId ? updatedProject : p));
+    saveDocToCloud('projects', projectId, updatedProject);
 
     if (project) {
       if (status === 'Diterima') {
@@ -924,8 +856,10 @@ export default function App() {
         return;
       }
       // Potong / hold saldo mahasiswa saat pengajuan penarikan
-      setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, balance: Math.max(0, (u.balance || 0) - numAmount) } : u));
-      setCurrentUser(curr => curr ? { ...curr, balance: Math.max(0, (curr.balance || 0) - numAmount) } : curr);
+      const newBalance = Math.max(0, (currentUser.balance || 0) - numAmount);
+      setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, balance: newBalance } : u));
+      setCurrentUser(curr => curr ? { ...curr, balance: newBalance } : curr);
+      saveDocToCloud('users', currentUser.id, { ...currentUser, balance: newBalance });
     }
 
     const newTx = {
@@ -941,6 +875,7 @@ export default function App() {
       deductedAtRequest: type === 'withdraw'
     };
     setTransactions(prev => [newTx, ...prev]);
+    saveDocToCloud('transactions', newTx.id, newTx);
 
     // Kirim notifikasi ke Admin
     sendNotification({
@@ -974,120 +909,123 @@ export default function App() {
 
   const handleReviewProject = (projectId, isAccepted, reason = '') => {
     const project = projects.find(p => p.id === projectId);
-    setProjects(prev => prev.map(p => {
-      if (p.id === projectId && p.status === 'Menunggu Review') {
-        if (isAccepted) {
-          if (p.paymentStatus === 'Sudah Dibayar') return { ...p, status: 'Selesai' };
+    if (!project || project.status !== 'Menunggu Review') return;
 
-          const budgetNum = Number(p.budget);
-          const feeInfo = calculateProjectFee(budgetNum);
-          const totalUmkmDeduction = p.totalUmkmDeposit || feeInfo.totalUmkmDeposit;
-          const studentReceives = budgetNum; // Mahasiswa menerima 100% utuh karena fee dibebankan ke UMKM
+    if (isAccepted) {
+      if (project.paymentStatus === 'Sudah Dibayar') {
+        const completedProj = { ...project, status: 'Selesai' };
+        setProjects(prev => prev.map(p => p.id === projectId ? completedProj : p));
+        saveDocToCloud('projects', projectId, completedProj);
+        return;
+      }
 
-          setUsers(usersList => usersList.map(u => {
-            if (u.id === p.umkmId && !p.isEscrowed) return { ...u, balance: (u.balance || 0) - totalUmkmDeduction };
-            if (p.applicants.some(a => a.status === 'Diterima' && a.studentId === u.id)) {
-               return { ...u, balance: (u.balance || 0) + studentReceives };
-            }
-            return u;
-          }));
-          setCurrentUser(curr => {
-            if (!curr) return curr;
-            if (curr.id === p.umkmId && !p.isEscrowed) return { ...curr, balance: (curr.balance || 0) - totalUmkmDeduction };
-            if (p.applicants.some(a => a.status === 'Diterima' && a.studentId === curr.id)) {
-              return { ...curr, balance: (curr.balance || 0) + studentReceives };
-            }
-            return curr;
-          });
+      const budgetNum = Number(project.budget);
+      const feeInfo = calculateProjectFee(budgetNum);
+      const totalUmkmDeduction = project.totalUmkmDeposit || feeInfo.totalUmkmDeposit;
+      const studentReceives = budgetNum;
 
-          // Catat keuntungan komisi fee platform jika > 0
-          const studentApplicant = p.applicants.find(a => a.status === 'Diterima');
-          if (studentApplicant) {
-            const earningTx = {
-              id: 'tx_' + Date.now(),
-              userId: studentApplicant.studentId,
-              userName: studentApplicant.studentName,
-              userRole: 'student',
-              type: 'earning_project',
-              amount: studentReceives,
-              status: 'Disetujui',
-              accountDetails: `Honor Penyelesaian Proyek: "${p.title}"`,
-              date: new Date().toLocaleDateString('id-ID')
-            };
-            setTransactions(prevTx => [earningTx, ...prevTx]);
-          }
+      const studentApplicant = (project.applicants || []).find(a => a.status === 'Diterima');
+      if (studentApplicant) {
+        const earningTx = {
+          id: 'tx_' + Date.now(),
+          userId: studentApplicant.studentId,
+          userName: studentApplicant.studentName,
+          userRole: 'student',
+          type: 'earning_project',
+          amount: studentReceives,
+          status: 'Disetujui',
+          accountDetails: `Honor Penyelesaian Proyek: "${project.title}"`,
+          date: new Date().toLocaleDateString('id-ID')
+        };
+        setTransactions(prevTx => [earningTx, ...prevTx]);
+        saveDocToCloud('transactions', earningTx.id, earningTx);
 
-          if (feeInfo.platformFee > 0) {
-            setPlatformProfits(prevProf => [
-              {
-                id: 'prof_' + Date.now(),
-                sourceType: 'project',
-                sourceId: p.id,
-                title: p.title,
-                clientName: `${p.umkmName} (UMKM)`,
-                providerName: studentApplicant?.studentName || 'Mahasiswa',
-                baseAmount: budgetNum,
-                feeRate: 0.10,
-                feeAmount: feeInfo.platformFee,
-                date: new Date().toLocaleDateString('id-ID')
-              },
-              ...prevProf
-            ]);
-          }
-
-          return { ...p, status: 'Selesai', paymentStatus: 'Sudah Dibayar', completedAt: new Date().toLocaleDateString('id-ID') };
-        } else {
-          return { 
-             ...p, 
-             status: 'Menunggu Banding',
-            banding: {
-              reason,
-              studentResponse: '',
-              status: 'Menunggu Banding',
-              date: null,
-              bandingSubmittedAt: null
-            }
-          };
+        const targetStudent = users.find(u => u.id === studentApplicant.studentId);
+        if (targetStudent) {
+          const newStudentBal = (targetStudent.balance || 0) + studentReceives;
+          saveDocToCloud('users', targetStudent.id, { ...targetStudent, balance: newStudentBal });
+          setUsers(usersList => usersList.map(u => u.id === targetStudent.id ? { ...u, balance: newStudentBal } : u));
+          setCurrentUser(curr => (curr && curr.id === targetStudent.id) ? { ...curr, balance: newStudentBal } : curr);
         }
       }
-      return p;
-    }));
 
-    if (project) {
-      const studentApplicant = project.applicants.find(a => a.status === 'Diterima');
-      if (isAccepted) {
-        if (studentApplicant) {
-          sendNotification({
-            userId: studentApplicant.studentId,
-            role: 'student',
-            type: 'project_completed',
-            title: 'Honor Masuk & Sertifikat Terbit! 🎓',
-            message: `Pekerjaan "${project.title}" disetujui ${project.umkmName}. Saldo Rp ${Number(project.budget).toLocaleString('id-ID')} telah ditambahkan ke dompet Anda!`,
-            actionType: 'open_certificate',
-            contextId: project.id
-          });
+      if (!project.isEscrowed) {
+        const umkmUser = users.find(u => u.id === project.umkmId);
+        if (umkmUser) {
+          const newUmkmBal = (umkmUser.balance || 0) - totalUmkmDeduction;
+          saveDocToCloud('users', umkmUser.id, { ...umkmUser, balance: newUmkmBal });
+          setUsers(usersList => usersList.map(u => u.id === umkmUser.id ? { ...u, balance: newUmkmBal } : u));
+          setCurrentUser(curr => (curr && curr.id === umkmUser.id) ? { ...curr, balance: newUmkmBal } : curr);
         }
+      }
+
+      if (feeInfo.platformFee > 0) {
+        const profDoc = {
+          id: 'prof_' + Date.now(),
+          sourceType: 'project',
+          sourceId: project.id,
+          title: project.title,
+          clientName: `${project.umkmName} (UMKM)`,
+          providerName: studentApplicant?.studentName || 'Mahasiswa',
+          baseAmount: budgetNum,
+          feeRate: 0.10,
+          feeAmount: feeInfo.platformFee,
+          date: new Date().toLocaleDateString('id-ID')
+        };
+        setPlatformProfits(prevProf => [profDoc, ...prevProf]);
+        saveDocToCloud('platform_profits', profDoc.id, profDoc);
+      }
+
+      const completedProj = { ...project, status: 'Selesai', paymentStatus: 'Sudah Dibayar', completedAt: new Date().toLocaleDateString('id-ID') };
+      setProjects(prev => prev.map(p => p.id === projectId ? completedProj : p));
+      saveDocToCloud('projects', completedProj.id, completedProj);
+
+      if (studentApplicant) {
         sendNotification({
-          userId: project.umkmId,
-          role: 'umkm',
+          userId: studentApplicant.studentId,
+          role: 'student',
           type: 'project_completed',
-          title: 'Proyek Selesai & Berhasil Ditutup ✅',
-          message: `Proyek "${project.title}" telah Anda setujui. Pembayaran honor telah dialokasikan ke mahasiswa.`,
+          title: 'Honor Masuk & Sertifikat Terbit! 🎓',
+          message: `Pekerjaan "${project.title}" disetujui ${project.umkmName}. Saldo Rp ${Number(project.budget).toLocaleString('id-ID')} telah ditambahkan ke dompet Anda!`,
+          actionType: 'open_certificate',
+          contextId: project.id
+        });
+      }
+      sendNotification({
+        userId: project.umkmId,
+        role: 'umkm',
+        type: 'project_completed',
+        title: 'Proyek Selesai & Berhasil Ditutup ✅',
+        message: `Proyek "${project.title}" telah Anda setujui. Pembayaran honor telah dialokasikan ke mahasiswa.`,
+        actionType: 'open_project',
+        contextId: project.id
+      });
+    } else {
+      const bandingProj = { 
+        ...project, 
+        status: 'Menunggu Banding',
+        banding: {
+          reason,
+          studentResponse: '',
+          status: 'Menunggu Banding',
+          date: null,
+          bandingSubmittedAt: null
+        }
+      };
+      setProjects(prev => prev.map(p => p.id === projectId ? bandingProj : p));
+      saveDocToCloud('projects', bandingProj.id, bandingProj);
+
+      const studentApplicant = (project.applicants || []).find(a => a.status === 'Diterima');
+      if (studentApplicant) {
+        sendNotification({
+          userId: studentApplicant.studentId,
+          role: 'student',
+          type: 'submission_rejected',
+          title: 'Hasil Pekerjaan Perlu Revisi / Banding ⚠️',
+          message: `UMKM memberikan catatan perbaikan untuk "${project.title}": "${reason || 'Perlu penyesuaian'}". Anda dapat memberikan tanggapan atau mengajukan banding.`,
           actionType: 'open_project',
           contextId: project.id
         });
-      } else {
-        if (studentApplicant) {
-          sendNotification({
-            userId: studentApplicant.studentId,
-            role: 'student',
-            type: 'submission_rejected',
-            title: 'Hasil Pekerjaan Perlu Revisi / Banding ⚠️',
-            message: `UMKM memberikan catatan perbaikan untuk "${project.title}": "${reason || 'Perlu penyesuaian'}". Anda dapat memberikan tanggapan atau mengajukan banding.`,
-            actionType: 'open_project',
-            contextId: project.id
-          });
-        }
       }
     }
 
@@ -1115,6 +1053,7 @@ export default function App() {
       ...serviceData
     };
     setStudentServices(prev => [newService, ...prev]);
+    saveDocToCloud('services', newService.id, newService);
 
     sendNotification({
       userId: currentUser.id,
@@ -1131,6 +1070,7 @@ export default function App() {
 
   const handleDeleteStudentService = (serviceId) => {
     setStudentServices(prev => prev.filter(s => s.id !== serviceId));
+    deleteDocFromCloud('services', serviceId);
     showToast('Penawaran jasa berhasil dihapus.', 'info');
   };
 
@@ -1152,8 +1092,10 @@ export default function App() {
     }
 
     // Kurangi saldo UMKM pemesan (Harga pas, pemesan tidak dibebankan fee tambahan)
-    setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, balance: (u.balance || 0) - priceNum } : u));
-    setCurrentUser(curr => curr ? { ...curr, balance: (curr.balance || 0) - priceNum } : curr);
+    const newUmkmBal = (currentUser.balance || 0) - priceNum;
+    setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, balance: newUmkmBal } : u));
+    setCurrentUser(curr => curr ? { ...curr, balance: newUmkmBal } : curr);
+    saveDocToCloud('users', currentUser.id, { ...currentUser, balance: newUmkmBal });
 
     const serviceOrderTx = {
       id: 'tx_' + Date.now(),
@@ -1167,6 +1109,7 @@ export default function App() {
       date: new Date().toLocaleDateString('id-ID')
     };
     setTransactions(prevTx => [serviceOrderTx, ...prevTx]);
+    saveDocToCloud('transactions', serviceOrderTx.id, serviceOrderTx);
 
     const newOrder = {
       id: 'ord_' + Date.now(),
@@ -1192,6 +1135,7 @@ export default function App() {
     };
 
     setServiceOrders(prev => [newOrder, ...prev]);
+    saveDocToCloud('service_orders', newOrder.id, newOrder);
 
     // Notifikasi ke penyedia jasa (Mahasiswa atau sesama UMKM)
     sendNotification({
@@ -1220,18 +1164,18 @@ export default function App() {
 
   const handleSubmitServiceWork = (orderId, submissionData) => {
     const order = serviceOrders.find(o => o.id === orderId);
-    setServiceOrders(prev => prev.map(o => {
-      if (o.id === orderId) {
-        return {
-          ...o,
-          status: 'Menunggu Review UMKM',
-          submissionLink: submissionData.submissionLink,
-          submissionNotes: submissionData.submissionNotes,
-          submittedAt: submissionData.submittedAt
-        };
-      }
-      return o;
-    }));
+    if (!order) return;
+
+    const updatedOrder = {
+      ...order,
+      status: 'Menunggu Review UMKM',
+      submissionLink: submissionData.submissionLink,
+      submissionNotes: submissionData.submissionNotes,
+      submittedAt: submissionData.submittedAt
+    };
+
+    setServiceOrders(prev => prev.map(o => o.id === orderId ? updatedOrder : o));
+    saveDocToCloud('service_orders', orderId, updatedOrder);
 
     if (order) {
       sendNotification({
@@ -1267,12 +1211,14 @@ export default function App() {
           ? (updatedReviews.reduce((sum, r) => sum + Number(r.rating), 0) / updatedReviews.length).toFixed(1)
           : u.rating;
 
-        return {
+        const updatedUser = {
           ...u,
           balance: (u.balance || 0) + providerEarnings,
           rating: Number(avgRating),
           userReviews: updatedReviews
         };
+        saveDocToCloud('users', providerId, updatedUser);
+        return updatedUser;
       }
       return u;
     }));
@@ -1293,8 +1239,11 @@ export default function App() {
       date: new Date().toLocaleDateString('id-ID')
     };
     setTransactions(prevTx => [earningServiceTx, ...prevTx]);
+    saveDocToCloud('transactions', earningServiceTx.id, earningServiceTx);
 
-    setServiceOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'Selesai', completedAt: new Date().toLocaleDateString('id-ID') } : o));
+    const completedOrder = { ...order, status: 'Selesai', completedAt: new Date().toLocaleDateString('id-ID') };
+    setServiceOrders(prev => prev.map(o => o.id === orderId ? completedOrder : o));
+    saveDocToCloud('service_orders', orderId, completedOrder);
 
     if (order.platformFee > 0) {
       setPlatformProfits(prev => [
@@ -1344,8 +1293,10 @@ export default function App() {
     const refundPrice = Number(order.price || 0);
 
     if (refundPrice > 0) {
+      const newBal = (currentUser?.balance || 0) + refundPrice;
       setUsers(prev => prev.map(u => u.id === order.umkmId ? { ...u, balance: (u.balance || 0) + refundPrice } : u));
       setCurrentUser(curr => (curr && curr.id === order.umkmId ? { ...curr, balance: (curr.balance || 0) + refundPrice } : curr));
+      saveDocToCloud('users', order.umkmId, { ...currentUser, balance: newBal });
 
       const refundTx = {
         id: 'tx_' + Date.now(),
@@ -1359,9 +1310,12 @@ export default function App() {
         date: new Date().toLocaleDateString('id-ID')
       };
       setTransactions(prev => [refundTx, ...prev]);
+      saveDocToCloud('transactions', refundTx.id, refundTx);
     }
 
-    setServiceOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'Dibatalkan', cancelReason: reason, cancelledAt: new Date().toLocaleDateString('id-ID') } : o));
+    const cancelledOrder = { ...order, status: 'Dibatalkan', cancelReason: reason, cancelledAt: new Date().toLocaleDateString('id-ID') };
+    setServiceOrders(prev => prev.map(o => o.id === orderId ? cancelledOrder : o));
+    saveDocToCloud('service_orders', orderId, cancelledOrder);
 
     const providerId = order.providerId || order.studentId;
     const providerRole = order.providerRole || (order.studentId ? 'student' : 'umkm');
@@ -1398,8 +1352,10 @@ export default function App() {
     const refundAmount = project.totalUmkmDeposit || project.budget || 0;
 
     if (project.isEscrowed && refundAmount > 0) {
+      const newBal = (currentUser?.balance || 0) + Number(refundAmount);
       setUsers(prev => prev.map(u => u.id === project.umkmId ? { ...u, balance: (u.balance || 0) + Number(refundAmount) } : u));
       setCurrentUser(curr => (curr && curr.id === project.umkmId ? { ...curr, balance: (curr.balance || 0) + Number(refundAmount) } : curr));
+      saveDocToCloud('users', project.umkmId, { ...currentUser, balance: newBal });
 
       const refundTx = {
         id: 'tx_' + Date.now(),
@@ -1413,9 +1369,12 @@ export default function App() {
         date: new Date().toLocaleDateString('id-ID')
       };
       setTransactions(prev => [refundTx, ...prev]);
+      saveDocToCloud('transactions', refundTx.id, refundTx);
     }
 
-    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, status: 'Dibatalkan', cancelReason: reason, cancelledAt: new Date().toLocaleDateString('id-ID') } : p));
+    const cancelledProj = { ...project, status: 'Dibatalkan', cancelReason: reason, cancelledAt: new Date().toLocaleDateString('id-ID') };
+    setProjects(prev => prev.map(p => p.id === projectId ? cancelledProj : p));
+    saveDocToCloud('projects', projectId, cancelledProj);
 
     sendNotification({
       userId: project.umkmId,
@@ -1445,28 +1404,28 @@ export default function App() {
 
   const handleAddReview = (projectId, reviewData) => {
     // reviewData: { fromRole: 'umkm'|'student', fromId, toId, rating: 1-5, comment: '' }
-    setProjects(prev => prev.map(p => {
-      if (p.id === projectId) {
-        const existingReviews = p.reviews || [];
-        return {
-          ...p,
-          reviews: [...existingReviews, { ...reviewData, date: new Date().toLocaleDateString('id-ID') }]
-        };
-      }
-      return p;
-    }));
+    const targetProject = projects.find(p => p.id === projectId);
+    if (targetProject) {
+      const existingReviews = targetProject.reviews || [];
+      const updatedReviews = [...existingReviews, { ...reviewData, date: new Date().toLocaleDateString('id-ID') }];
+      const updatedProj = { ...targetProject, reviews: updatedReviews };
+      setProjects(prev => prev.map(p => p.id === projectId ? updatedProj : p));
+      saveDocToCloud('projects', projectId, updatedProj);
+    }
 
     // Update target user's rating & reviews list
     setUsers(prev => prev.map(u => {
       if (u.id === reviewData.toId) {
         const userReviews = u.userReviews || [];
-        const updatedReviews = [...userReviews, { ...reviewData, projectTitle: projects.find(p => p.id === projectId)?.title || 'Project', date: new Date().toLocaleDateString('id-ID') }];
+        const updatedReviews = [...userReviews, { ...reviewData, projectTitle: targetProject?.title || 'Project', date: new Date().toLocaleDateString('id-ID') }];
         const avgRating = (updatedReviews.reduce((sum, r) => sum + Number(r.rating), 0) / updatedReviews.length).toFixed(1);
-        return {
+        const updatedUser = {
           ...u,
           rating: Number(avgRating),
           userReviews: updatedReviews
         };
+        saveDocToCloud('users', reviewData.toId, updatedUser);
+        return updatedUser;
       }
       return u;
     }));
@@ -1498,22 +1457,21 @@ export default function App() {
 
   const handleSubmitBanding = (projectId, studentResponse) => {
     const project = projects.find(p => p.id === projectId);
-    setProjects(prev => prev.map(p => {
-      if (p.id === projectId && p.banding) {
-        return {
-          ...p,
+    if (project && project.banding) {
+      const updatedBandingProj = {
+        ...project,
+        status: 'Banding Berlangsung',
+        banding: {
+          ...project.banding,
+          studentResponse,
           status: 'Banding Berlangsung',
-          banding: {
-            ...p.banding,
-            studentResponse,
-            status: 'Banding Berlangsung',
-            date: new Date().toISOString(),
-            bandingSubmittedAt: Date.now()
-          }
-        };
-      }
-      return p;
-    }));
+          date: new Date().toISOString(),
+          bandingSubmittedAt: Date.now()
+        }
+      };
+      setProjects(prev => prev.map(p => p.id === projectId ? updatedBandingProj : p));
+      saveDocToCloud('projects', projectId, updatedBandingProj);
+    }
 
     if (project) {
       sendNotification({
@@ -1541,19 +1499,18 @@ export default function App() {
 
   const handleCompleteProject = (projectId, submissionData = {}) => {
     const proj = projects.find(p => p.id === projectId);
-    setProjects(prev => prev.map(p => {
-      if (p.id === projectId && p.status === 'Mahasiswa Terpilih') {
-        return { 
-          ...p, 
-          status: 'Menunggu Review',
-          submission: {
-            ...submissionData,
-            submittedAt: new Date().toLocaleDateString('id-ID')
-          }
-        };
-      }
-      return p;
-    }));
+    if (proj && proj.status === 'Mahasiswa Terpilih') {
+      const updatedP = { 
+        ...proj, 
+        status: 'Menunggu Review',
+        submission: {
+          ...submissionData,
+          submittedAt: new Date().toLocaleDateString('id-ID')
+        }
+      };
+      setProjects(prev => prev.map(p => p.id === projectId ? updatedP : p));
+      saveDocToCloud('projects', projectId, updatedP);
+    }
 
     if (proj) {
       sendNotification({
@@ -1573,64 +1530,62 @@ export default function App() {
   const handleApplyProject = (projectId, proposal) => {
     if (currentUser?.role !== 'student') return;
 
-    let toastMessage = 'Lamaran berhasil dikirim!';
     const targetProject = projects.find(p => p.id === projectId);
+    if (!targetProject) return;
 
-    setProjects((prev) =>
-      prev.map((p) => {
-        if (p.id === projectId) {
-          const existingApp = p.applicants.find(a => a.studentId === currentUser.id);
+    const existingApp = (targetProject.applicants || []).find(a => a.studentId === currentUser.id);
+    let toastMessage = 'Lamaran berhasil dikirim!';
+    let updatedProject = null;
 
-          if (existingApp) {
-            if (existingApp.status === 'Menunggu' || existingApp.status === 'Pending') {
-              toastMessage = 'Lamaran Anda saat ini masih dalam proses peninjauan oleh UMKM.';
-              return p;
-            }
-            if (existingApp.status === 'Diterima') {
-              toastMessage = 'Anda sudah diterima pada project ini.';
-              return p;
-            }
-            // Lamaran sebelumnya berstatus Ditolak -> izinkan apply lagi
-            toastMessage = 'Lamaran ulang berhasil dikirim ke UMKM!';
+    if (existingApp) {
+      if (existingApp.status === 'Menunggu' || existingApp.status === 'Pending') {
+        showToast('Lamaran Anda saat ini masih dalam proses peninjauan oleh UMKM.', 'info');
+        return;
+      }
+      if (existingApp.status === 'Diterima') {
+        showToast('Anda sudah diterima pada project ini.', 'info');
+        return;
+      }
+      // Lamaran sebelumnya berstatus Ditolak -> izinkan apply lagi
+      toastMessage = 'Lamaran ulang berhasil dikirim ke UMKM!';
+      updatedProject = {
+        ...targetProject,
+        applicants: targetProject.applicants.map(a => {
+          if (a.studentId === currentUser.id) {
             return {
-              ...p,
-              applicants: p.applicants.map(a => {
-                if (a.studentId === currentUser.id) {
-                  return {
-                    ...a,
-                    status: 'Menunggu',
-                    proposal: proposal.trim() ? proposal : 'Halo, saya mengajukan lamaran ulang untuk project ini.',
-                    date: new Date().toLocaleDateString('id-ID'),
-                    previouslyRejected: true,
-                    reapplied: true,
-                    reapplyCount: (a.reapplyCount || 0) + 1,
-                    lastRejectedDate: a.lastRejectedDate || a.date,
-                    previousProposal: a.proposal
-                  };
-                }
-                return a;
-              })
+              ...a,
+              status: 'Menunggu',
+              proposal: proposal.trim() ? proposal : 'Halo, saya mengajukan lamaran ulang untuk project ini.',
+              date: new Date().toLocaleDateString('id-ID'),
+              previouslyRejected: true,
+              reapplied: true,
+              reapplyCount: (a.reapplyCount || 0) + 1,
+              lastRejectedDate: a.lastRejectedDate || a.date,
+              previousProposal: a.proposal
             };
           }
+          return a;
+        })
+      };
+    } else {
+      // Pelamar baru
+      updatedProject = {
+        ...targetProject,
+        applicants: [
+          ...(targetProject.applicants || []),
+          {
+            studentId: currentUser.id,
+            studentName: currentUser.name,
+            proposal: proposal.trim() ? proposal : 'Halo, saya berminat untuk melamar project ini.',
+            date: new Date().toLocaleDateString('id-ID'),
+            status: 'Menunggu'
+          }
+        ]
+      };
+    }
 
-          // Pelamar baru
-          return {
-            ...p,
-            applicants: [
-              ...p.applicants,
-              {
-                studentId: currentUser.id,
-                studentName: currentUser.name,
-                proposal: proposal.trim() ? proposal : 'Halo, saya berminat untuk melamar project ini.',
-                date: new Date().toLocaleDateString('id-ID'),
-                status: 'Menunggu'
-              }
-            ]
-          };
-        }
-        return p;
-      })
-    );
+    setProjects(prev => prev.map(p => p.id === projectId ? updatedProject : p));
+    saveDocToCloud('projects', projectId, updatedProject);
 
     if (targetProject) {
       sendNotification({

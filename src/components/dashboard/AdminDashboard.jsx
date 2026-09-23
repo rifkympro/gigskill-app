@@ -1,4 +1,5 @@
 import React from 'react';
+import { saveDocToCloud } from '../../services/firestoreService.js';
 import {
   LogOut,
   ShieldCheck,
@@ -155,15 +156,18 @@ export default function AdminDashboard({
 
   const handleVerifyUser = (userId, isApproved, rejectReasonText = '') => {
     const targetUser = users.find(u => u.id === userId);
+    const updatedUserDoc = { 
+      ...targetUser, 
+      verified: isApproved, 
+      verificationStatus: isApproved ? 'Approved' : 'Rejected',
+      verificationRejectReason: !isApproved ? (rejectReasonText || 'Dokumen belum memenuhi persyaratan verifikasi.') : undefined,
+      verifiedAt: isApproved ? new Date().toLocaleDateString('id-ID') : undefined
+    };
+    saveDocToCloud('users', userId, updatedUserDoc);
+
     setUsers(prev => prev.map(u => {
       if (u.id === userId) {
-        return { 
-          ...u, 
-          verified: isApproved, 
-          verificationStatus: isApproved ? 'Approved' : 'Rejected',
-          verificationRejectReason: !isApproved ? (rejectReasonText || 'Dokumen belum memenuhi persyaratan verifikasi.') : undefined,
-          verifiedAt: isApproved ? new Date().toLocaleDateString('id-ID') : undefined
-        };
+        return updatedUserDoc;
       }
       return u;
     }));
@@ -172,10 +176,7 @@ export default function AdminDashboard({
         if (curr && curr.id === userId) {
           return {
             ...curr,
-            verified: isApproved,
-            verificationStatus: isApproved ? 'Approved' : 'Rejected',
-            verificationRejectReason: !isApproved ? (rejectReasonText || 'Dokumen belum memenuhi persyaratan verifikasi.') : undefined,
-            verifiedAt: isApproved ? new Date().toLocaleDateString('id-ID') : undefined
+            ...updatedUserDoc
           };
         }
         return curr;
@@ -185,7 +186,9 @@ export default function AdminDashboard({
     if (setProjects) {
       setProjects(prev => prev.map(p => {
         if (p.umkmId === userId) {
-          return { ...p, verified: isApproved };
+          const updP = { ...p, verified: isApproved };
+          saveDocToCloud('projects', p.id, updP);
+          return updP;
         }
         return p;
       }));
@@ -229,13 +232,23 @@ export default function AdminDashboard({
       setAdminNote(`Dana sebesar Rp ${Number(tx.amount).toLocaleString('id-ID')} telah berhasil ditransfer ke ${tx.accountDetails}.`);
     } else {
       // For Top Up, direct approve
+      const approvedTx = { ...tx, status: 'Disetujui', approvedAt: new Date().toLocaleDateString('id-ID') };
+      saveDocToCloud('transactions', tx.id, approvedTx);
+
       setTransactions(prev => prev.map(t => {
-        if (t.id === tx.id) return { ...t, status: 'Disetujui', approvedAt: new Date().toLocaleDateString('id-ID') };
+        if (t.id === tx.id) return approvedTx;
         return t;
       }));
+
+      const targetU = users.find(u => u.id === tx.userId);
+      const newBal = (targetU?.balance || 0) + Number(tx.amount);
+      if (targetU) {
+        saveDocToCloud('users', tx.userId, { ...targetU, balance: newBal });
+      }
+
       setUsers(prev => prev.map(u => {
         if (u.id === tx.userId) {
-          return { ...u, balance: (u.balance || 0) + Number(tx.amount) };
+          return { ...u, balance: newBal };
         }
         return u;
       }));
@@ -291,12 +304,19 @@ export default function AdminDashboard({
     };
 
     setTransactions(prev => prev.map(t => t.id === approvingTx.id ? updatedTx : t));
+    saveDocToCloud('transactions', approvingTx.id, updatedTx);
 
     // Deduct user's balance only if it wasn't already deducted upon request
     if (!approvingTx.deductedAtRequest) {
+      const targetU = users.find(u => u.id === approvingTx.userId);
+      const newBal = Math.max(0, (targetU?.balance || 0) - Number(approvingTx.amount));
+      if (targetU) {
+        saveDocToCloud('users', approvingTx.userId, { ...targetU, balance: newBal });
+      }
+
       setUsers(prev => prev.map(u => {
         if (u.id === approvingTx.userId) {
-          return { ...u, balance: Math.max(0, (u.balance || 0) - Number(approvingTx.amount)) };
+          return { ...u, balance: newBal };
         }
         return u;
       }));
@@ -304,7 +324,7 @@ export default function AdminDashboard({
       if (setCurrentUser) {
         setCurrentUser(curr => {
           if (curr && curr.id === approvingTx.userId) {
-            return { ...curr, balance: Math.max(0, (curr.balance || 0) - Number(approvingTx.amount)) };
+            return { ...curr, balance: newBal };
           }
           return curr;
         });
@@ -350,24 +370,33 @@ export default function AdminDashboard({
         : 'Bukti transfer belum dapat divalidasi oleh Admin.'
     );
 
+    const rejectedTxDoc = {
+      ...rejectingTx,
+      status: 'Ditolak',
+      rejectedAt: new Date().toLocaleDateString('id-ID'),
+      rejectReason: finalReason,
+      refunded: !!rejectingTx.deductedAtRequest
+    };
+
     setTransactions(prev => prev.map(t => {
       if (t.id === rejectingTx.id) {
-        return {
-          ...t,
-          status: 'Ditolak',
-          rejectedAt: new Date().toLocaleDateString('id-ID'),
-          rejectReason: finalReason,
-          refunded: !!rejectingTx.deductedAtRequest
-        };
+        return rejectedTxDoc;
       }
       return t;
     }));
+    saveDocToCloud('transactions', rejectingTx.id, rejectedTxDoc);
 
     // KEMBALIKAN SALDO MAHASISWA JIKA WD DITOLAK
     if (rejectingTx.type === 'withdraw' && rejectingTx.deductedAtRequest) {
+      const targetU = users.find(u => u.id === rejectingTx.userId);
+      const refundedBal = (targetU?.balance || 0) + Number(rejectingTx.amount);
+      if (targetU) {
+        saveDocToCloud('users', rejectingTx.userId, { ...targetU, balance: refundedBal });
+      }
+
       setUsers(prev => prev.map(u => {
         if (u.id === rejectingTx.userId) {
-          return { ...u, balance: (u.balance || 0) + Number(rejectingTx.amount) };
+          return { ...u, balance: refundedBal };
         }
         return u;
       }));
@@ -375,7 +404,7 @@ export default function AdminDashboard({
       if (setCurrentUser) {
         setCurrentUser(curr => {
           if (curr && curr.id === rejectingTx.userId) {
-            return { ...curr, balance: (curr.balance || 0) + Number(rejectingTx.amount) };
+            return { ...curr, balance: refundedBal };
           }
           return curr;
         });
@@ -456,6 +485,19 @@ export default function AdminDashboard({
         const escrowAmt = p.totalUmkmDeposit || budgetNum;
 
         if (winner === 'student' && p.paymentStatus !== 'Sudah Dibayar') {
+          if (acceptedApplicant) {
+            const studentUser = users.find(u => u.id === acceptedApplicant.studentId);
+            if (studentUser) {
+              saveDocToCloud('users', acceptedApplicant.studentId, { ...studentUser, balance: (studentUser.balance || 0) + budgetNum });
+            }
+          }
+          if (!p.isEscrowed) {
+            const umkmUser = users.find(u => u.id === p.umkmId);
+            if (umkmUser) {
+              saveDocToCloud('users', p.umkmId, { ...umkmUser, balance: Math.max(0, (umkmUser.balance || 0) - budgetNum) });
+            }
+          }
+
           setUsers(usersList => usersList.map(u => {
             if (p.applicants.some(a => a.status === 'Diterima' && a.studentId === u.id)) {
               return { ...u, balance: (u.balance || 0) + budgetNum };
@@ -491,6 +533,7 @@ export default function AdminDashboard({
               date: new Date().toLocaleDateString('id-ID')
             };
             setTransactions(prevTx => [earnTx, ...prevTx]);
+            saveDocToCloud('transactions', earnTx.id, earnTx);
           }
 
           if (sendNotification) {
@@ -519,6 +562,11 @@ export default function AdminDashboard({
           paymentStatus = 'Sudah Dibayar';
         } else if (winner === 'umkm') {
           if (p.isEscrowed) {
+            const umkmUser = users.find(u => u.id === p.umkmId);
+            if (umkmUser) {
+              saveDocToCloud('users', p.umkmId, { ...umkmUser, balance: (umkmUser.balance || 0) + escrowAmt });
+            }
+
             setUsers(usersList => usersList.map(u => {
               if (u.id === p.umkmId) {
                 return { ...u, balance: (u.balance || 0) + escrowAmt };
@@ -547,6 +595,7 @@ export default function AdminDashboard({
                 date: new Date().toLocaleDateString('id-ID')
               };
               setTransactions(prevTx => [refundTx, ...prevTx]);
+              saveDocToCloud('transactions', refundTx.id, refundTx);
             }
 
             if (sendNotification) {
@@ -573,7 +622,7 @@ export default function AdminDashboard({
             }
           }
         }
-        return { 
+        const updated = { 
           ...p, 
           status: winner === 'student' ? 'Selesai' : 'Sengketa Selesai',
           paymentStatus,
@@ -582,9 +631,12 @@ export default function AdminDashboard({
             status: winner === 'student' ? 'Dimenangkan Mahasiswa' : 'Dimenangkan UMKM'
           }
         };
+        saveDocToCloud('projects', projectId, updated);
+        return updated;
       }
       return p;
     }));
+
     showToast(`Mediasi selesai. ${winner === 'student' ? 'Mahasiswa' : 'UMKM'} memenangkan banding.`);
   };
 

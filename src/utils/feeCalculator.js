@@ -29,6 +29,7 @@ export function calculateProjectFee(budget) {
     platformFee,
     totalUmkmDeposit,
     studentPayout,
+    studentReceives: studentPayout,
     feeBadgeText: isFree ? 'Promo Free Fee (0%)' : 'Biaya Layanan 10%'
   };
 }
@@ -51,6 +52,7 @@ export function calculateServiceFee(price) {
     platformFee,
     totalUmkmPay,
     studentEarnings,
+    studentReceives: studentEarnings,
     feeBadgeText: isFree ? 'Promo Free Fee (0%)' : 'Potongan Platform 10%'
   };
 }

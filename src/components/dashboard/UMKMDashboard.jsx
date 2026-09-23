@@ -1258,55 +1258,64 @@ export default function UMKMDashboard({
                     className="w-full p-3 rounded-xl border border-slate-200" 
                   />
                   {Number(budgetInput) > 0 && (() => {
-                    const feeInfo = calculateProjectFee(Number(budgetInput));
-                    const umkmBal = Number(currentUser?.balance || 0);
-                    const isEnough = umkmBal >= feeInfo.totalUmkmDeposit;
-                    return (
-                      <div className={`mt-2 p-3 rounded-xl border text-xs ${feeInfo.isFree ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-blue-50 border-blue-200 text-blue-950'}`}>
-                        {feeInfo.isFree ? (
-                          <div>
-                            <div className="flex items-center gap-1.5 font-bold text-emerald-700 mb-1">
-                              <span className="bg-emerald-200 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-extrabold uppercase tracking-wide">
-                                Bebas Fee (Promo &le; Rp 100.000)
-                              </span>
-                            </div>
-                            <p className="text-slate-600">
-                              Proyek ini memenuhi syarat <strong>Bebas Biaya Platform (0% Fee)</strong>. Total deposit yang ditarik dari saldo UMKM: <strong>Rp {feeInfo.totalUmkmDeposit.toLocaleString('id-ID')}</strong> (Mahasiswa menerima honor utuh Rp {feeInfo.studentReceives.toLocaleString('id-ID')}).
-                            </p>
-                          </div>
-                        ) : (
-                          <div>
-                            <div className="flex items-center gap-1.5 font-bold text-blue-800 mb-1">
-                              <span className="bg-blue-200 text-blue-800 text-[10px] px-2 py-0.5 rounded-full font-extrabold uppercase tracking-wide">
-                                Ketentuan Fee Platform 10%
-                              </span>
-                            </div>
-                            <div className="space-y-1 text-slate-700">
-                              <div className="flex justify-between">
-                                <span>Honor Mahasiswa:</span>
-                                <span className="font-semibold">Rp {feeInfo.studentReceives.toLocaleString('id-ID')}</span>
+                    try {
+                      const numVal = Math.max(0, Number(budgetInput) || 0);
+                      const feeInfo = calculateProjectFee(numVal) || {};
+                      const studentPayout = Number(feeInfo.studentReceives ?? feeInfo.studentPayout ?? numVal ?? 0);
+                      const platformFee = Number(feeInfo.platformFee || 0);
+                      const totalDeposit = Number(feeInfo.totalUmkmDeposit ?? (studentPayout + platformFee));
+                      const umkmBal = Number(currentUser?.balance || 0);
+                      const isEnough = umkmBal >= totalDeposit;
+                      return (
+                        <div className={`mt-2 p-3 rounded-xl border text-xs ${feeInfo.isFree ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-blue-50 border-blue-200 text-blue-950'}`}>
+                          {feeInfo.isFree ? (
+                            <div>
+                              <div className="flex items-center gap-1.5 font-bold text-emerald-700 mb-1">
+                                <span className="bg-emerald-200 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-extrabold uppercase tracking-wide">
+                                  Bebas Fee (Promo &le; Rp 100.000)
+                                </span>
                               </div>
-                              <div className="flex justify-between">
-                                <span>Biaya Layanan Platform (10%):</span>
-                                <span className="font-semibold text-blue-700">+ Rp {feeInfo.platformFee.toLocaleString('id-ID')}</span>
-                              </div>
-                              <div className="flex justify-between pt-1 border-t border-blue-200 font-bold text-slate-900">
-                                <span>Total Deposit yang Ditarik:</span>
-                                <span className="text-blue-700 font-extrabold">Rp {feeInfo.totalUmkmDeposit.toLocaleString('id-ID')}</span>
-                              </div>
+                              <p className="text-slate-600">
+                                Proyek ini memenuhi syarat <strong>Bebas Biaya Platform (0% Fee)</strong>. Total deposit yang ditarik dari saldo UMKM: <strong>Rp {totalDeposit.toLocaleString('id-ID')}</strong> (Mahasiswa menerima honor utuh Rp {studentPayout.toLocaleString('id-ID')}).
+                              </p>
                             </div>
-                          </div>
-                        )}
-                        <div className="mt-2 pt-1.5 border-t border-slate-200/60 flex items-center justify-between text-[11px]">
-                          <span className="text-slate-500">Saldo Anda: Rp {umkmBal.toLocaleString('id-ID')}</span>
-                          {!isEnough ? (
-                            <span className="text-red-600 font-bold">⚠️ Saldo tidak mencukupi</span>
                           ) : (
-                            <span className="text-emerald-700 font-semibold">✓ Saldo mencukupi</span>
+                            <div>
+                              <div className="flex items-center gap-1.5 font-bold text-blue-800 mb-1">
+                                <span className="bg-blue-200 text-blue-800 text-[10px] px-2 py-0.5 rounded-full font-extrabold uppercase tracking-wide">
+                                  Ketentuan Fee Platform 10%
+                                </span>
+                              </div>
+                              <div className="space-y-1 text-slate-700">
+                                <div className="flex justify-between">
+                                  <span>Honor Mahasiswa:</span>
+                                  <span className="font-semibold">Rp {studentPayout.toLocaleString('id-ID')}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span>Biaya Layanan Platform (10%):</span>
+                                  <span className="font-semibold text-blue-700">+ Rp {platformFee.toLocaleString('id-ID')}</span>
+                                </div>
+                                <div className="flex justify-between pt-1 border-t border-blue-200 font-bold text-slate-900">
+                                  <span>Total Deposit yang Ditarik:</span>
+                                  <span className="text-blue-700 font-extrabold">Rp {totalDeposit.toLocaleString('id-ID')}</span>
+                                </div>
+                              </div>
+                            </div>
                           )}
+                          <div className="mt-2 pt-1.5 border-t border-slate-200/60 flex items-center justify-between text-[11px]">
+                            <span className="text-slate-500">Saldo Anda: Rp {umkmBal.toLocaleString('id-ID')}</span>
+                            {!isEnough ? (
+                              <span className="text-red-600 font-bold">⚠️ Saldo tidak mencukupi</span>
+                            ) : (
+                              <span className="text-emerald-700 font-semibold">✓ Saldo mencukupi</span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
+                      );
+                    } catch (err) {
+                      console.error('Error rendering fee preview:', err);
+                      return null;
+                    }
                   })()}
                 </div>
               </div>

@@ -226,7 +226,7 @@ export default function StudentDashboard({
   };
 
   const myApplications = projects.filter((p) =>
-    p.applicants.some((a) => a.studentId === currentUser.id)
+    (p.applicants || []).some((a) => a.studentId === currentUser?.id)
   );
 
   const formatRupiah = (angka) => {
@@ -1792,7 +1792,8 @@ export default function StudentDashboard({
                   { key: 'Aktif', label: 'Sedang Berjalan' },
                   { key: 'Menunggu', label: 'Menunggu Review' },
                   { key: 'Selesai', label: 'Selesai' },
-                  { key: 'Pending', label: 'Pending Lamaran' }
+                  { key: 'Pending', label: 'Pending Lamaran' },
+                  { key: 'Ditolak', label: 'Belum Diterima' }
                 ].map(filter => (
                   <button
                     key={filter.key}
@@ -1812,7 +1813,8 @@ export default function StudentDashboard({
 
             {(() => {
               const filteredApplications = myApplications.filter(project => {
-                const application = project.applicants.find(a => a.studentId === currentUser.id);
+                const application = (project.applicants || []).find(a => a.studentId === currentUser?.id);
+                if (!application) return false;
                 if (lamaranStatusFilter === 'Semua') return true;
                 if (lamaranStatusFilter === 'Aktif') {
                   return application.status === 'Diterima' && project.status !== 'Selesai' && project.status !== 'Menunggu Review';
@@ -1824,7 +1826,10 @@ export default function StudentDashboard({
                   return project.status === 'Selesai';
                 }
                 if (lamaranStatusFilter === 'Pending') {
-                  return application.status === 'Pending';
+                  return application.status === 'Pending' || application.status === 'Menunggu';
+                }
+                if (lamaranStatusFilter === 'Ditolak') {
+                  return application.status === 'Ditolak';
                 }
                 return true;
               });

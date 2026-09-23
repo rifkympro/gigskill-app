@@ -16,13 +16,13 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from '../firebase.js';
 
-// Registrasi akun ke Cloud Firestore + Firebase Auth (jika didukung)
+// Registrasi akun ke Cloud Firestore + Firebase Auth (non-blocking)
 export async function registerWithFirebase(userData) {
   try {
     const cleanEmail = (userData.email || '').trim().toLowerCase();
     const cleanPassword = userData.password || '';
 
-    // 1. Cek apakah email sudah terdaftar di Firestore
+    // 1. Cek cepat apakah email sudah terdaftar di Firestore
     if (db) {
       try {
         const checkQ = query(collection(db, 'users'), where('email', '==', cleanEmail));
@@ -38,30 +38,19 @@ export async function registerWithFirebase(userData) {
       }
     }
 
-    let uid = 'u_cloud_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    const uid = 'u_cloud_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
 
-    // 2. Coba daftarkan ke Firebase Auth jika password minimal 6 karakter
+    // Coba daftarkan ke Firebase Auth di background (non-blocking agar tidak membuat user menunggu lama)
     if (auth && cleanPassword.length >= 6) {
-      try {
-        const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, cleanPassword);
-        if (userCredential && userCredential.user) {
-          uid = userCredential.user.uid;
-        }
-      } catch (fbAuthErr) {
-        console.warn('Firebase Auth notice (falling back to direct cloud Firestore record):', fbAuthErr.code, fbAuthErr.message);
-        if (fbAuthErr.code === 'auth/email-already-in-use') {
-          return { 
-            success: false, 
-            error: 'Email ini sudah terdaftar. Silakan gunakan email lain atau masuk.' 
-          };
-        }
-      }
+      createUserWithEmailAndPassword(auth, cleanEmail, cleanPassword).catch((e) => {
+        console.warn('Firebase Auth background notice:', e?.code);
+      });
     }
 
     const profileData = {
       id: uid,
       email: cleanEmail,
-      password: cleanPassword, // disimpan untuk autentikasi multi-perangkat cross-browser
+      password: cleanPassword, // disimpan untuk autentikasi cepat multi-perangkat cross-browser
       name: userData.name || '',
       role: userData.role || 'student',
       univ: userData.univ || '',
@@ -78,7 +67,7 @@ export async function registerWithFirebase(userData) {
     // Bersihkan field undefined sebelum simpan
     Object.keys(profileData).forEach(k => profileData[k] === undefined && delete profileData[k]);
 
-    // 3. Simpan profil ke Cloud Firestore agar dapat diakses dari laptop, HP, & browser mana pun
+    // Simpan profil ke Cloud Firestore
     if (db) {
       await setDoc(doc(db, 'users', uid), profileData);
     }
@@ -96,7 +85,7 @@ export async function registerWithFirebase(userData) {
   }
 }
 
-// Login akun dengan Cloud Firestore & Firebase Auth
+// Login akun dengan Cloud Firestore & Firebase Auth (instan & responsif)
 export async function loginWithFirebase(email, password) {
   try {
     const cleanEmail = (email || '').trim().toLowerCase();
@@ -114,11 +103,9 @@ export async function loginWithFirebase(email, password) {
 
           // Bandingkan password
           if (userDoc.password === cleanPassword) {
-            // Coba sinkronisasi sesi ke Firebase Auth jika ada
+            // Sesi Firebase Auth di background (non-blocking)
             if (auth && cleanPassword.length >= 6) {
-              try {
-                await signInWithEmailAndPassword(auth, cleanEmail, cleanPassword);
-              } catch (e) {}
+              signInWithEmailAndPassword(auth, cleanEmail, cleanPassword).catch(() => {});
             }
 
             return { 
@@ -181,7 +168,7 @@ export async function loginWithFirebase(email, password) {
     // 3. Jika akun tidak ada di Firestore dan tidak ada di Auth
     return { 
       success: false, 
-      error: 'Akun dengan email ini belum terdaftar. Silakan daftar terlebih dahulu.' 
+      error: 'Akun dengan email ini belum terdaftar. Silakan periksa kembali atau daftar akun baru.' 
     };
   } catch (error) {
     console.error('Firebase Login Error:', error);

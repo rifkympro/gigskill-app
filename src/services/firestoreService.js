@@ -30,13 +30,32 @@ export function subscribeToCollection(collectionName, onData, onError) {
   }
 }
 
+// Bersihkan undefined secara rekursif agar Firestore tidak melempar error Unsupported field value
+export function deepClean(obj) {
+  if (obj === null || obj === undefined) return null;
+  if (Array.isArray(obj)) {
+    return obj
+      .filter(item => item !== undefined)
+      .map(item => deepClean(item));
+  }
+  if (typeof obj === 'object') {
+    const res = {};
+    for (const key of Object.keys(obj)) {
+      const val = obj[key];
+      if (val !== undefined) {
+        res[key] = deepClean(val);
+      }
+    }
+    return res;
+  }
+  return obj;
+}
+
 // Simpan atau perbarui dokumen di Cloud Firestore
 export async function saveDocToCloud(collectionName, docId, data) {
   if (!db || !docId) return false;
   try {
-    const cleanData = { ...data };
-    // Bersihkan field undefined agar tidak error di Firestore
-    Object.keys(cleanData).forEach(k => cleanData[k] === undefined && delete cleanData[k]);
+    const cleanData = deepClean(data);
     await setDoc(doc(db, collectionName, String(docId)), cleanData, { merge: true });
     return true;
   } catch (err) {
@@ -67,8 +86,7 @@ export async function seedIfEmpty(collectionName, initialItems) {
       console.log(`Seeding initial items to cloud ${collectionName}...`);
       for (const item of initialItems) {
         if (item && item.id) {
-          const cleanItem = { ...item };
-          Object.keys(cleanItem).forEach(k => cleanItem[k] === undefined && delete cleanItem[k]);
+          const cleanItem = deepClean(item);
           await setDoc(doc(db, collectionName, String(item.id)), cleanItem);
         }
       }
