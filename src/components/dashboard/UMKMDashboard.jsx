@@ -95,6 +95,9 @@ export default function UMKMDashboard({
 
   // Verification state for UMKM
   const [showVerificationModal, setShowVerificationModal] = React.useState(false);
+  const [highlightVerification, setHighlightVerification] = React.useState(false);
+  const validTabs = ['project', 'post', 'profil', 'dompet', 'pesan'];
+  const safeTab = activeTab === 'profile' ? 'profil' : (validTabs.includes(activeTab) ? activeTab : 'project');
   const [verificationType, setVerificationType] = React.useState(currentUser?.verificationDoc?.type || 'photo');
   const [verificationLink, setVerificationLink] = React.useState(currentUser?.verificationDoc?.type === 'link' ? currentUser.verificationDoc.value : '');
   const [verificationFileUrl, setVerificationFileUrl] = React.useState(currentUser?.verificationDoc?.type === 'photo' ? currentUser.verificationDoc.value : '');
@@ -189,7 +192,28 @@ export default function UMKMDashboard({
               </button>
             </div>
 
-            {currentUser.verificationStatus === 'Rejected' && (
+            {currentUser.verified ? (
+              <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs text-emerald-950 space-y-1.5">
+                <p className="font-extrabold flex items-center gap-1.5 text-emerald-900 text-sm">
+                  <CheckCircle2 size={16} className="text-emerald-600" /> Usaha UMKM Terverifikasi Resmi
+                </p>
+                <p className="text-emerald-800 leading-relaxed">
+                  Selamat! Dokumen legalitas usaha Anda telah disetujui resmi oleh Admin GigSkill. Lencana terverifikasi aktif pada profil UMKM Anda.
+                </p>
+                {currentUser.verificationDoc && (
+                  <div className="mt-2.5 pt-2 border-t border-emerald-200/80 text-emerald-900">
+                    <p className="text-[11px] font-medium">Metode: {currentUser.verificationDoc.type === 'photo' ? '📷 Foto Dokumen / Tempat' : '🔗 Tautan Dokumen (Cloud)'}</p>
+                    <p className="text-[11px] font-medium">Tanggal Disetujui: {currentUser.verificationDoc.submittedAt || '-'}</p>
+                    {currentUser.verificationDoc.type === 'photo' && currentUser.verificationDoc.value && (
+                      <div className="mt-2">
+                        <img src={currentUser.verificationDoc.value} alt="Dokumen UMKM" className="w-28 h-20 object-cover rounded-lg border border-emerald-300 cursor-pointer hover:opacity-90" onClick={() => setPreviewPhoto(currentUser.verificationDoc.value)} />
+                        <span className="text-[10px] text-emerald-700 underline cursor-pointer mt-0.5 block" onClick={() => setPreviewPhoto(currentUser.verificationDoc.value)}>Perbesar Foto</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : currentUser.verificationStatus === 'Rejected' ? (
               <div className="mb-4 p-3.5 bg-red-50 border border-red-200 rounded-2xl text-xs text-red-900 space-y-1">
                 <p className="font-bold flex items-center gap-1.5 text-red-950">
                   <AlertTriangle size={15} className="text-red-600" /> Pengajuan Sebelumnya Ditolak Admin
@@ -201,9 +225,7 @@ export default function UMKMDashboard({
                   Silakan perbaiki atau unggah berkas legalitas terbaru di bawah ini untuk ditinjau ulang oleh tim Admin.
                 </p>
               </div>
-            )}
-
-            {currentUser.verificationDoc && currentUser.verificationStatus !== 'Rejected' && (
+            ) : currentUser.verificationDoc ? (
               <div className="mb-4 p-3.5 bg-emerald-50/80 border border-emerald-200 rounded-2xl text-xs text-emerald-900 space-y-1">
                 <p className="font-bold flex items-center gap-1.5 text-emerald-950">
                   <Clock size={14} className="text-emerald-600" /> Dokumen Verifikasi Terkirim (Status: {currentUser.verificationStatus || 'Menunggu Verifikasi Admin'})
@@ -223,7 +245,7 @@ export default function UMKMDashboard({
                   </a>
                 )}
               </div>
-            )}
+            ) : null}
 
             <form onSubmit={(e) => {
               e.preventDefault();
@@ -505,7 +527,7 @@ export default function UMKMDashboard({
             { id: 'dompet', icon: CreditCard, label: 'Dompet Saya' },
             { id: 'pesan', icon: MessageCircle, label: 'Pesan' }
           ].map((item) => (
-            <button key={item.id} onClick={() => { if(item.id === 'pesan') { setIsChatOpen(true); } else { setActiveTab(item.id); } setIsMobileMenuOpen(false); }} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all ${activeTab === item.id || (item.id === 'pesan' && isChatOpen) ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-100'}`}>
+            <button key={item.id} onClick={() => { if(item.id === 'pesan') { setIsChatOpen(true); } else { setActiveTab(item.id); } setIsMobileMenuOpen(false); }} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all ${safeTab === item.id || (item.id === 'pesan' && isChatOpen) ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-100'}`}>
               <item.icon size={18} />
               <span>{item.label}</span>
             </button>
@@ -585,8 +607,21 @@ export default function UMKMDashboard({
                 } else if (notif.actionType === 'open_wallet') {
                   setActiveTab('dompet');
                 } else if (notif.actionType === 'open_profile') {
-                  if (notif.type.includes('verification')) {
+                  setActiveTab('profil');
+                  if (!currentUser.verified && notif.type === 'verification_rejected') {
                     setShowVerificationModal(true);
+                  } else {
+                    setShowVerificationModal(false);
+                    setHighlightVerification(true);
+                    setTimeout(() => {
+                      const el = document.getElementById('verifikasi-identitas-umkm');
+                      if (el) {
+                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      }
+                    }, 100);
+                    setTimeout(() => {
+                      setHighlightVerification(false);
+                    }, 3500);
                   }
                 }
               }}
@@ -649,10 +684,10 @@ export default function UMKMDashboard({
           )
         )}
 
-        {activeTab === 'dompet' && <DompetView role="umkm" currentUser={currentUser} onRequestTransaction={onRequestTransaction} transactions={transactions} />}
-        <ChatView currentUser={currentUser} users={users} role="umkm" messages={messages} setMessages={setMessages} initialActiveChat={activeChatId} activeChatContext={activeChatContext} setActiveChatContext={setActiveChatContext} projects={projects} isChatOpen={isChatOpen || activeTab === 'pesan'} onClose={() => { setIsChatOpen(false); if(activeTab === 'pesan') setActiveTab('project'); }} />
+        {safeTab === 'dompet' && <DompetView role="umkm" currentUser={currentUser} onRequestTransaction={onRequestTransaction} transactions={transactions} />}
+        <ChatView currentUser={currentUser} users={users} role="umkm" messages={messages} setMessages={setMessages} initialActiveChat={activeChatId} activeChatContext={activeChatContext} setActiveChatContext={setActiveChatContext} projects={projects} isChatOpen={isChatOpen || safeTab === 'pesan'} onClose={() => { setIsChatOpen(false); if(safeTab === 'pesan') setActiveTab('project'); }} />
 
-        {activeTab === 'project' && (
+        {safeTab === 'project' && (
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
@@ -1083,7 +1118,7 @@ export default function UMKMDashboard({
         </div>
         )}
 
-        {activeTab === 'post' && (
+        {safeTab === 'post' && (
           <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm max-w-2xl">
             <h2 className="text-2xl font-extrabold text-slate-900 mb-6">Posting Project Baru</h2>
             <form onSubmit={(e) => {
@@ -1190,7 +1225,7 @@ export default function UMKMDashboard({
           </div>
         )}
 
-        {activeTab === 'profil' && (
+        {safeTab === 'profil' && (
           <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-8">
               <div className="flex items-center gap-6">
@@ -1226,7 +1261,14 @@ export default function UMKMDashboard({
               </div>
 
               {/* Status Verifikasi Legalitas UMKM */}
-              <div className="p-5 bg-slate-50 border border-slate-200 rounded-2xl">
+              <div
+                id="verifikasi-identitas-umkm"
+                className={`p-5 rounded-2xl border transition-all duration-500 scroll-mt-24 ${
+                  highlightVerification
+                    ? 'bg-emerald-50 border-emerald-400 ring-4 ring-emerald-200/70 shadow-lg'
+                    : 'bg-slate-50 border-slate-200'
+                }`}
+              >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="flex items-start gap-3">
                     <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
@@ -1251,7 +1293,7 @@ export default function UMKMDashboard({
                       </h4>
                       <p className="text-xs text-slate-500 mt-1 leading-relaxed">
                         {currentUser.verified
-                          ? 'Akun UMKM Anda telah diverifikasi oleh Admin. Badge terverifikasi meningkatkan minat mahasiswa untuk melamar pada proyek Anda.'
+                          ? 'Akun UMKM Anda telah diverifikasi resmi oleh Admin. Badge terverifikasi meningkatkan minat mahasiswa untuk melamar pada proyek Anda.'
                           : currentUser.verificationDoc
                           ? `Berkas verifikasi telah dikirim (${currentUser.verificationDoc.type === 'photo' ? 'Foto Dokumen' : 'Tautan Drive'}). Admin sedang meninjau kelengkapan berkas.`
                           : 'Kirimkan foto NIB / SIUP / Surat Keterangan Usaha atau tautan Google Drive untuk verifikasi legalitas.'}
@@ -1263,7 +1305,7 @@ export default function UMKMDashboard({
                     onClick={() => setShowVerificationModal(true)}
                     className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shrink-0 self-start sm:self-center shadow-xs flex items-center gap-1.5"
                   >
-                    {currentUser.verified ? 'Lihat / Perbarui Berkas' : currentUser.verificationDoc ? 'Periksa / Ubah Berkas' : 'Unggah Legalitas UMKM'}
+                    {currentUser.verified ? 'Lihat Berkas Terverifikasi' : currentUser.verificationDoc ? 'Periksa / Ubah Berkas' : 'Unggah Legalitas UMKM'}
                   </button>
                 </div>
               </div>

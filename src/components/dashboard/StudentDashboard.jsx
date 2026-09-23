@@ -118,6 +118,7 @@ export default function StudentDashboard({
 
   // Verifikasi Akun Mahasiswa modal state
   const [showVerificationModal, setShowVerificationModal] = React.useState(false);
+  const [highlightVerification, setHighlightVerification] = React.useState(false);
   const [verificationType, setVerificationType] = React.useState('photo'); // 'photo' | 'link'
   const [verificationFileUrl, setVerificationFileUrl] = React.useState('');
   const [verificationFileName, setVerificationFileName] = React.useState('');
@@ -128,6 +129,9 @@ export default function StudentDashboard({
   const [submittingProjectId, setSubmittingProjectId] = React.useState(null);
   const [submissionLink, setSubmissionLink] = React.useState('');
   const [submissionNotes, setSubmissionNotes] = React.useState('');
+
+  const validTabs = ['cari', 'lamaran', 'profil', 'dompet', 'pesan'];
+  const safeTab = activeTab === 'profile' ? 'profil' : (activeTab === 'project' ? 'cari' : (validTabs.includes(activeTab) ? activeTab : 'cari'));
   const [offlinePhotos, setOfflinePhotos] = React.useState([]);
   const [offlinePin, setOfflinePin] = React.useState('');
   const [offlineDuration, setOfflineDuration] = React.useState('');
@@ -260,7 +264,28 @@ export default function StudentDashboard({
               </button>
             </div>
 
-            {currentUser.verificationStatus === 'Rejected' && (
+            {currentUser.verified ? (
+              <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs text-emerald-950 space-y-1.5">
+                <p className="font-extrabold flex items-center gap-1.5 text-emerald-900 text-sm">
+                  <CheckCircle2 size={16} className="text-emerald-600" /> Identitas Mahasiswa Terverifikasi Resmi
+                </p>
+                <p className="text-emerald-800 leading-relaxed">
+                  Selamat! Kartu Tanda Mahasiswa (KTM) Anda telah diverifikasi resmi oleh Admin GigSkill. Lencana terverifikasi aktif pada profil Anda.
+                </p>
+                {currentUser.verificationDoc && (
+                  <div className="mt-2.5 pt-2 border-t border-emerald-200/80 text-emerald-900">
+                    <p className="text-[11px] font-medium">Metode: {currentUser.verificationDoc.type === 'photo' ? '📷 Foto/Scan KTM' : '🔗 Tautan Dokumen (Drive)'}</p>
+                    <p className="text-[11px] font-medium">Tanggal Disetujui: {currentUser.verificationDoc.submittedAt || '-'}</p>
+                    {currentUser.verificationDoc.type === 'photo' && currentUser.verificationDoc.value && (
+                      <div className="mt-2">
+                        <img src={currentUser.verificationDoc.value} alt="KTM Terverifikasi" className="w-28 h-20 object-cover rounded-lg border border-emerald-300 cursor-pointer hover:opacity-90" onClick={() => setPreviewPhoto(currentUser.verificationDoc.value)} />
+                        <span className="text-[10px] text-emerald-700 underline cursor-pointer mt-0.5 block" onClick={() => setPreviewPhoto(currentUser.verificationDoc.value)}>Perbesar Foto KTM</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : currentUser.verificationStatus === 'Rejected' ? (
               <div className="mb-4 p-3.5 bg-red-50 border border-red-200 rounded-2xl text-xs text-red-900 space-y-1">
                 <p className="font-bold flex items-center gap-1.5 text-red-950">
                   <AlertTriangle size={15} className="text-red-600" /> Pengajuan Verifikasi Sebelumnya Ditolak Admin
@@ -272,9 +297,7 @@ export default function StudentDashboard({
                   Silakan unggah ulang foto KTM yang lebih jelas atau tautan berkas terbaru di bawah ini.
                 </p>
               </div>
-            )}
-
-            {currentUser.verificationDoc && currentUser.verificationStatus !== 'Rejected' && (
+            ) : currentUser.verificationDoc ? (
               <div className="mb-4 p-3.5 bg-blue-50/80 border border-blue-200 rounded-2xl text-xs text-blue-900 space-y-1">
                 <p className="font-bold flex items-center gap-1.5 text-blue-950">
                   <Clock size={14} className="text-blue-600" /> Dokumen Terkirim Saat Ini (Status: {currentUser.verificationStatus || 'Menunggu Verifikasi Admin'})
@@ -294,7 +317,7 @@ export default function StudentDashboard({
                   </a>
                 )}
               </div>
-            )}
+            ) : null}
 
             <form onSubmit={(e) => {
               e.preventDefault();
@@ -1138,7 +1161,7 @@ export default function StudentDashboard({
             { id: 'dompet', icon: CreditCard, label: 'Dompet Saya' },
             { id: 'pesan', icon: MessageCircle, label: 'Pesan' }
           ].map((item) => (
-            <button key={item.id} onClick={() => { if(item.id === 'pesan') { setIsChatOpen(true); } else { setActiveTab(item.id); } setIsMobileMenuOpen(false); }} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all ${activeTab === item.id || (item.id === 'pesan' && isChatOpen) ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-100'}`}>
+            <button key={item.id} onClick={() => { if(item.id === 'pesan') { setIsChatOpen(true); } else { setActiveTab(item.id); } setIsMobileMenuOpen(false); }} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all ${safeTab === item.id || (item.id === 'pesan' && isChatOpen) ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-100'}`}>
               <item.icon size={18} />
               <span>{item.label}</span>
             </button>
@@ -1218,17 +1241,31 @@ export default function StudentDashboard({
                       setSelectedCertificateProject(proj);
                     }
                   } else {
-                    setActiveTab('profile');
+                    setActiveTab('profil');
                   }
                 } else if (notif.actionType === 'open_profile') {
-                  setActiveTab('profile');
-                  if (notif.type.includes('verification')) {
+                  setActiveTab('profil');
+                  // If rejected, open re-verification upload modal so student can resubmit
+                  if (!currentUser.verified && notif.type === 'verification_rejected') {
                     setShowVerificationModal(true);
+                  } else {
+                    // Already verified or general profile view: keep modal closed, navigate to profil tab, highlight status card
+                    setShowVerificationModal(false);
+                    setHighlightVerification(true);
+                    setTimeout(() => {
+                      const el = document.getElementById('verifikasi-identitas-mahasiswa');
+                      if (el) {
+                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      }
+                    }, 100);
+                    setTimeout(() => {
+                      setHighlightVerification(false);
+                    }, 3500);
                   }
                 } else if (notif.actionType === 'open_wallet') {
                   setActiveTab('dompet');
-                } else if (notif.actionType === 'open_project') {
-                  setActiveTab('project');
+                } else if (notif.actionType === 'open_project' || notif.actionType === 'open_lamaran') {
+                  setActiveTab(notif.actionType === 'open_lamaran' ? 'lamaran' : 'cari');
                 }
               }}
             />
@@ -1263,10 +1300,10 @@ export default function StudentDashboard({
           </div>
         )}
 
-        {activeTab === 'dompet' && <DompetView role="student" currentUser={currentUser} onRequestTransaction={onRequestTransaction} transactions={transactions} />}
-        <ChatView currentUser={currentUser} users={users} role="student" messages={messages} setMessages={setMessages} initialActiveChat={activeChatId} activeChatContext={activeChatContext} setActiveChatContext={setActiveChatContext} projects={projects} isChatOpen={isChatOpen || activeTab === 'pesan'} onClose={() => { setIsChatOpen(false); if(activeTab === 'pesan') setActiveTab('cari'); }} />
+        {safeTab === 'dompet' && <DompetView role="student" currentUser={currentUser} onRequestTransaction={onRequestTransaction} transactions={transactions} />}
+        <ChatView currentUser={currentUser} users={users} role="student" messages={messages} setMessages={setMessages} initialActiveChat={activeChatId} activeChatContext={activeChatContext} setActiveChatContext={setActiveChatContext} projects={projects} isChatOpen={isChatOpen || safeTab === 'pesan'} onClose={() => { setIsChatOpen(false); if(safeTab === 'pesan') setActiveTab('cari'); }} />
 
-        {activeTab === 'cari' && (
+        {safeTab === 'cari' && (
           <div className="space-y-6">
             <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-200 flex flex-col md:flex-row gap-4 items-center">
               <div className="flex-1 flex items-center bg-slate-50 rounded-xl px-4 py-2 w-full">
@@ -1380,7 +1417,7 @@ export default function StudentDashboard({
           </div>
         )}
 
-        {activeTab === 'lamaran' && (
+        {safeTab === 'lamaran' && (
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
@@ -1752,7 +1789,7 @@ export default function StudentDashboard({
           </div>
         )}
 
-        {activeTab === 'profil' && (
+        {safeTab === 'profil' && (
           <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-8">
               <div className="flex items-center gap-6">
@@ -1809,7 +1846,14 @@ export default function StudentDashboard({
               </div>
 
               {/* Verifikasi Identitas Mahasiswa */}
-              <div className="p-5 bg-slate-50 border border-slate-200 rounded-2xl">
+              <div
+                id="verifikasi-identitas-mahasiswa"
+                className={`p-5 rounded-2xl border transition-all duration-500 scroll-mt-24 ${
+                  highlightVerification
+                    ? 'bg-emerald-50 border-emerald-400 ring-4 ring-emerald-200/70 shadow-lg'
+                    : 'bg-slate-50 border-slate-200'
+                }`}
+              >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="flex items-start gap-3">
                     <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
@@ -1838,7 +1882,7 @@ export default function StudentDashboard({
                       </h4>
                       <p className="text-xs text-slate-500 mt-1 leading-relaxed">
                         {currentUser.verified
-                          ? 'Akun Anda telah diverifikasi oleh Admin. Lencana terverifikasi meningkatkan kepercayaan UMKM terhadap lamaran Anda.'
+                          ? 'Akun Anda telah diverifikasi resmi oleh Admin. Lencana terverifikasi meningkatkan kepercayaan UMKM terhadap lamaran Anda.'
                           : currentUser.verificationStatus === 'Rejected'
                           ? `Pengajuan verifikasi KTM Anda ditolak oleh Admin. Catatan: "${currentUser.verificationRejectReason || 'Dokumen belum memenuhi kriteria.'}". Silakan unggah perbaikan berkas.`
                           : currentUser.verificationDoc
@@ -1853,11 +1897,13 @@ export default function StudentDashboard({
                     className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0 self-start sm:self-center shadow-xs flex items-center gap-1.5 ${
                       currentUser.verificationStatus === 'Rejected'
                         ? 'bg-red-600 hover:bg-red-700 text-white'
+                        : currentUser.verified
+                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
                         : 'bg-blue-600 hover:bg-blue-700 text-white'
                     }`}
                   >
                     {currentUser.verified
-                      ? 'Lihat / Perbarui Berkas'
+                      ? 'Lihat Berkas Terverifikasi'
                       : currentUser.verificationStatus === 'Rejected'
                       ? 'Perbaiki & Ajukan Ulang'
                       : currentUser.verificationDoc

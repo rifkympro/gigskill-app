@@ -105,6 +105,7 @@ export default function NotificationBell({
     if (!item.read && onMarkAsRead) {
       onMarkAsRead(item.id);
     }
+    setIsOpen(false);
     if (onAction) {
       onAction(item);
     }
