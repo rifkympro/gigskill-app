@@ -5,7 +5,7 @@ import {
   Send
 } from 'lucide-react';
 
-export default function ChatView({ currentUser, users, role, messages, setMessages, initialActiveChat, activeChatContext, projects, setActiveChatContext, isChatOpen, onClose }) {
+export default function ChatView({ currentUser, users, role, messages, setMessages, initialActiveChat, activeChatContext, projects, setActiveChatContext, isChatOpen, onClose, sendNotification }) {
   const [activeChat, setActiveChat] = React.useState(initialActiveChat);
   const [messageText, setMessageText] = React.useState('');
   const [isFullscreen, setIsFullscreen] = React.useState(false);
@@ -34,16 +34,30 @@ export default function ChatView({ currentUser, users, role, messages, setMessag
     e.preventDefault();
     if (!messageText.trim() || !activeChat) return;
     const projectId = getProjectId(activeChat);
+    const partnerId = getPartnerId(activeChat);
+    const textToSend = messageText.trim();
     const newMsg = {
       id: 'm_' + Date.now(),
       chatId: activeChat,
       senderId: currentUser.id,
-      text: messageText,
+      text: textToSend,
       timestamp: new Date().toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'}),
       projectId: projectId || undefined
     };
     setMessages(prev => [...prev, newMsg]);
     setMessageText('');
+
+    if (sendNotification && partnerId) {
+      sendNotification({
+        userId: partnerId,
+        role: role === 'student' ? 'umkm' : 'student',
+        type: 'chat_message',
+        title: `Pesan baru dari ${currentUser.name || 'Mitra'} 💬`,
+        message: textToSend.length > 60 ? textToSend.substring(0, 57) + '...' : textToSend,
+        actionType: 'open_chat',
+        contextId: activeChat
+      });
+    }
   };
 
   const activePartner = activeChat ? users.find(u => u.id === getPartnerId(activeChat)) : null;

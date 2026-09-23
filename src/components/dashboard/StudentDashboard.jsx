@@ -41,13 +41,23 @@ import {
   FileText,
   Link,
   Eye,
-  Award
+  Award,
+  ShoppingBag
 } from 'lucide-react';
 import LocationPicker from '../common/LocationPicker.jsx';
 import DompetView from './DompetView.jsx';
 import ChatView from './ChatView.jsx';
 import CertificateModal from './CertificateModal.jsx';
 import NotificationBell from '../common/NotificationBell.jsx';
+import StudentServicesView from '../services/StudentServicesView.jsx';
+import { calculateServiceFee } from '../../utils/feeCalculator.js';
+
+export const PRESET_STUDENT_SERVICE_IMAGES = [
+  { label: 'Template Web', url: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop&q=80' },
+  { label: 'Desain Grafis & Feed', url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80' },
+  { label: 'Menu & Branding Cafe', url: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800&auto=format&fit=crop&q=80' },
+  { label: 'Stiker & Kemasan Produk', url: 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?w=800&auto=format&fit=crop&q=80' }
+];
 
 export const DUMMY_OFFLINE_PROOFS = [
   {
@@ -98,7 +108,15 @@ export default function StudentDashboard({
   onMarkAllAsRead,
   onDeleteNotification,
   onClearAll,
-  onViewCertificate
+  onViewCertificate,
+  studentServices = [],
+  onCreateStudentService,
+  onDeleteStudentService,
+  serviceOrders = [],
+  onSubmitServiceWork,
+  onCancelServiceOrder,
+  sendNotification,
+  showToast
 }) {
   const [activeTab, setActiveTab] = React.useState('cari');
   const [activeChatId, setActiveChatId] = React.useState(null);
@@ -130,7 +148,17 @@ export default function StudentDashboard({
   const [submissionLink, setSubmissionLink] = React.useState('');
   const [submissionNotes, setSubmissionNotes] = React.useState('');
 
-  const validTabs = ['cari', 'lamaran', 'profil', 'dompet', 'pesan'];
+  // State for posting new service (post_jasa tab, matching UMKM post project experience)
+  const [newServiceType, setNewServiceType] = React.useState('Online');
+  const [newServiceLocation, setNewServiceLocation] = React.useState('');
+  const [newServiceCategory, setNewServiceCategory] = React.useState('Desain Grafis');
+  const [isCustomServiceCategory, setIsCustomServiceCategory] = React.useState(false);
+  const [newServicePrice, setNewServicePrice] = React.useState('');
+  const [newServiceDelivery, setNewServiceDelivery] = React.useState('2-3 Hari');
+  const [isCustomDelivery, setIsCustomDelivery] = React.useState(false);
+  const [newServicePreviewUrl, setNewServicePreviewUrl] = React.useState('');
+
+  const validTabs = ['cari', 'lamaran', 'jasa', 'post_jasa', 'profil', 'dompet', 'pesan'];
   const safeTab = activeTab === 'profile' ? 'profil' : (activeTab === 'project' ? 'cari' : (validTabs.includes(activeTab) ? activeTab : 'cari'));
   const [offlinePhotos, setOfflinePhotos] = React.useState([]);
   const [offlinePin, setOfflinePin] = React.useState('');
@@ -1157,6 +1185,8 @@ export default function StudentDashboard({
           {[
             { id: 'cari', icon: Search, label: 'Cari Project' },
             { id: 'lamaran', icon: Briefcase, label: 'Lamaran Saya' },
+            { id: 'jasa', icon: ShoppingBag, label: 'Jasa Saya' },
+            { id: 'post_jasa', icon: Plus, label: 'Buat Penawaran Jasa' },
             { id: 'profil', icon: User, label: 'Profil & Portfolio' },
             { id: 'dompet', icon: CreditCard, label: 'Dompet Saya' },
             { id: 'pesan', icon: MessageCircle, label: 'Pesan' }
@@ -1264,6 +1294,8 @@ export default function StudentDashboard({
                   }
                 } else if (notif.actionType === 'open_wallet') {
                   setActiveTab('dompet');
+                } else if (notif.actionType === 'open_student_services') {
+                  setActiveTab('jasa');
                 } else if (notif.actionType === 'open_project' || notif.actionType === 'open_lamaran') {
                   setActiveTab(notif.actionType === 'open_lamaran' ? 'lamaran' : 'cari');
                 }
@@ -1301,7 +1333,308 @@ export default function StudentDashboard({
         )}
 
         {safeTab === 'dompet' && <DompetView role="student" currentUser={currentUser} onRequestTransaction={onRequestTransaction} transactions={transactions} />}
-        <ChatView currentUser={currentUser} users={users} role="student" messages={messages} setMessages={setMessages} initialActiveChat={activeChatId} activeChatContext={activeChatContext} setActiveChatContext={setActiveChatContext} projects={projects} isChatOpen={isChatOpen || safeTab === 'pesan'} onClose={() => { setIsChatOpen(false); if(safeTab === 'pesan') setActiveTab('cari'); }} />
+        {safeTab === 'jasa' && (
+          <StudentServicesView
+            currentUser={currentUser}
+            studentServices={studentServices}
+            onCreateStudentService={onCreateStudentService}
+            onDeleteStudentService={onDeleteStudentService}
+            serviceOrders={serviceOrders}
+            onSubmitServiceWork={onSubmitServiceWork}
+            onCancelServiceOrder={onCancelServiceOrder}
+            showToast={showToast}
+            onNavigateToPost={() => setActiveTab('post_jasa')}
+          />
+        )}
+
+        {safeTab === 'post_jasa' && (
+          <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm max-w-2xl">
+            <h2 className="text-2xl font-extrabold text-slate-900 mb-6">Posting Penawaran Jasa Baru</h2>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.target);
+              const cat = isCustomServiceCategory ? formData.get('custom_category') : formData.get('category');
+              const delivery = isCustomDelivery ? formData.get('custom_delivery') : formData.get('delivery_time');
+              const priceVal = formData.get('price');
+              const titleVal = formData.get('title');
+              const descVal = formData.get('desc');
+              const tagsVal = formData.get('tags');
+              const typeVal = formData.get('type') || newServiceType;
+              const locationVal = typeVal === 'Offline' ? newServiceLocation : '';
+
+              if (!titleVal || !priceVal || Number(priceVal) <= 0) {
+                if (showToast) showToast('Harap lengkapi judul dan harga penawaran jasa!', 'error');
+                return;
+              }
+
+              const tagList = tagsVal
+                ? String(tagsVal).split(',').map(s => s.trim()).filter(Boolean)
+                : [String(cat || 'Jasa'), String(typeVal)];
+
+              onCreateStudentService({
+                title: String(titleVal),
+                category: String(cat || 'Desain Grafis'),
+                type: String(typeVal),
+                format: formData.get('format') || 'Jasa Kustom',
+                price: Number(priceVal),
+                deliveryTime: String(delivery || '2-3 Hari'),
+                desc: String(descVal || ''),
+                tags: tagList,
+                previewUrl: newServicePreviewUrl || PRESET_STUDENT_SERVICE_IMAGES[0].url,
+                location: locationVal
+              });
+
+              e.target.reset();
+              setNewServicePrice('');
+              setNewServiceLocation('');
+              setNewServicePreviewUrl('');
+              setIsCustomServiceCategory(false);
+              setIsCustomDelivery(false);
+              if (showToast) showToast('Penawaran jasa Anda berhasil diposting dan kini tampil di katalog UMKM!', 'success');
+              setActiveTab('jasa');
+            }} className="space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Judul Penawaran Jasa</label>
+                <input
+                  name="title"
+                  required
+                  type="text"
+                  placeholder="Cth: Jasa Desain Feed Instagram & Banner Toko"
+                  className="w-full p-3 rounded-xl border border-slate-200"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Tipe Jasa</label>
+                  <select
+                    name="type"
+                    value={newServiceType}
+                    onChange={(e) => setNewServiceType(e.target.value)}
+                    className="w-full p-3 rounded-xl border border-slate-200 bg-white"
+                  >
+                    <option value="Online">Online (Remote)</option>
+                    <option value="Offline">Offline (On-site)</option>
+                  </select>
+                </div>
+                {newServiceType === 'Offline' ? (
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-2">Lokasi (Kota / Area)</label>
+                    <LocationPicker name="location" value={newServiceLocation} onChange={setNewServiceLocation} />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-2">Format Layanan</label>
+                    <select
+                      name="format"
+                      className="w-full p-3 rounded-xl border border-slate-200 bg-white"
+                    >
+                      <option value="Jasa Kustom">Jasa Kustom (Sesuai Kebutuhan)</option>
+                      <option value="Template / Desain Jadi">Template / Desain Jadi</option>
+                      <option value="Konsultasi & Audit">Konsultasi &amp; Pendampingan</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Kategori</label>
+                  <select
+                    name="category"
+                    value={newServiceCategory}
+                    onChange={(e) => {
+                      setNewServiceCategory(e.target.value);
+                      setIsCustomServiceCategory(e.target.value === 'Custom');
+                    }}
+                    required={!isCustomServiceCategory}
+                    className="w-full p-3 rounded-xl border border-slate-200 bg-white mb-2"
+                  >
+                    <option value="Desain Grafis">Desain Grafis</option>
+                    <option value="Pemasaran Digital">Pemasaran Digital</option>
+                    <option value="Web & Teknologi">Web &amp; Teknologi</option>
+                    <option value="Administrasi">Administrasi</option>
+                    <option value="Video & Animasi">Video &amp; Animasi</option>
+                    <option value="Penulisan & Konten">Penulisan &amp; Konten</option>
+                    <option value="Custom">Custom</option>
+                  </select>
+                  {isCustomServiceCategory && (
+                    <input
+                      name="custom_category"
+                      required
+                      type="text"
+                      placeholder="Masukkan kategori jasa..."
+                      className="w-full p-3 rounded-xl border border-slate-200"
+                    />
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Harga Jasa Ditawarkan (Rp)</label>
+                  <input
+                    name="price"
+                    required
+                    type="number"
+                    min="10000"
+                    placeholder="Cth: 150000"
+                    value={newServicePrice}
+                    onChange={(e) => setNewServicePrice(e.target.value)}
+                    className="w-full p-3 rounded-xl border border-slate-200"
+                  />
+                  {Number(newServicePrice) > 0 && (() => {
+                    const feeInfo = calculateServiceFee(Number(newServicePrice));
+                    return (
+                      <div className={`mt-2 p-3 rounded-xl border text-xs ${feeInfo.isFree ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-blue-50 border-blue-200 text-blue-950'}`}>
+                        {feeInfo.isFree ? (
+                          <div>
+                            <div className="flex items-center gap-1.5 font-bold text-emerald-700 mb-1">
+                              <span className="bg-emerald-200 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-extrabold uppercase tracking-wide">
+                                Bebas Fee Platform (Promo &le; Rp 100.000)
+                              </span>
+                            </div>
+                            <p className="text-slate-600">
+                              Harga jasa &le; Rp 100.000 bebas potongan platform (0% Fee). Anda akan menerima honor utuh 100% sebesar <strong>Rp {feeInfo.studentReceives.toLocaleString('id-ID')}</strong> saat jasa dibeli &amp; disetujui UMKM.
+                            </p>
+                          </div>
+                        ) : (
+                          <div>
+                            <div className="flex items-center gap-1.5 font-bold text-blue-800 mb-1">
+                              <span className="bg-blue-200 text-blue-800 text-[10px] px-2 py-0.5 rounded-full font-extrabold uppercase tracking-wide">
+                                Ketentuan Fee Platform Flat 10%
+                              </span>
+                            </div>
+                            <div className="space-y-1 text-slate-700">
+                              <div className="flex justify-between">
+                                <span>Harga Ditagih ke UMKM:</span>
+                                <span className="font-semibold">Rp {feeInfo.price.toLocaleString('id-ID')}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Potongan Fee Platform (10%):</span>
+                                <span className="font-semibold text-red-600">- Rp {feeInfo.platformFee.toLocaleString('id-ID')}</span>
+                              </div>
+                              <div className="flex justify-between pt-1 border-t border-blue-200 font-bold text-slate-900">
+                                <span>Estimasi Bersih yang Diterima:</span>
+                                <span className="text-blue-700 font-extrabold">Rp {feeInfo.studentReceives.toLocaleString('id-ID')}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Estimasi Pengerjaan</label>
+                  <select
+                    name="delivery_time"
+                    value={newServiceDelivery}
+                    onChange={(e) => {
+                      setNewServiceDelivery(e.target.value);
+                      setIsCustomDelivery(e.target.value === 'Custom');
+                    }}
+                    required={!isCustomDelivery}
+                    className="w-full p-3 rounded-xl border border-slate-200 bg-white mb-2"
+                  >
+                    <option value="1 Hari">1 Hari</option>
+                    <option value="2-3 Hari">2-3 Hari</option>
+                    <option value="5-7 Hari">5-7 Hari</option>
+                    <option value="1-2 Minggu">1-2 Minggu</option>
+                    <option value="Custom">Custom</option>
+                  </select>
+                  {isCustomDelivery && (
+                    <input
+                      name="custom_delivery"
+                      required
+                      type="text"
+                      placeholder="Masukkan estimasi pengerjaan... (Cth: 4 Hari)"
+                      className="w-full p-3 rounded-xl border border-slate-200"
+                    />
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Tags (Pisahkan koma)</label>
+                  <input
+                    name="tags"
+                    type="text"
+                    placeholder="Logo, Figma, Canva, Revisi 2x"
+                    className="w-full p-3 rounded-xl border border-slate-200"
+                  />
+                </div>
+              </div>
+
+              {/* Sampul / Gambar Preview Jasa */}
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">
+                  Sampul Portfolio / Gambar Preview
+                </label>
+                <p className="text-xs text-slate-400 mb-2">Gunakan preset sampel cepat di bawah atau masukkan tautan URL gambar Anda.</p>
+                <input
+                  name="preview_url"
+                  type="url"
+                  placeholder="https://images.unsplash.com/... atau tautan gambar"
+                  value={newServicePreviewUrl}
+                  onChange={(e) => setNewServicePreviewUrl(e.target.value)}
+                  className="w-full p-3 rounded-xl border border-slate-200 mb-2"
+                />
+
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {PRESET_STUDENT_SERVICE_IMAGES.map((p, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setNewServicePreviewUrl(p.url)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border flex items-center gap-1.5 ${
+                        newServicePreviewUrl === p.url
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <ImageIcon size={13} />
+                      <span>{p.label}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {newServicePreviewUrl && (
+                  <div className="mt-3 relative w-full h-36 rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
+                    <img
+                      src={newServicePreviewUrl}
+                      alt="Preview"
+                      className="w-full h-full object-cover"
+                      onError={(e) => { e.currentTarget.src = PRESET_STUDENT_SERVICE_IMAGES[0].url; }}
+                    />
+                    <span className="absolute bottom-2 left-2 bg-slate-900/80 text-white text-[10px] font-bold px-2 py-0.5 rounded-md">
+                      Preview Gambar Terpilih
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Deskripsi Penawaran Jasa</label>
+                <textarea
+                  name="desc"
+                  required
+                  rows="4"
+                  placeholder="Ceritakan detail jasa yang ditawarkan, apa saja yang akan didapatkan oleh UMKM, syarat revisi, dan pengalaman portofolio Anda..."
+                  className="w-full p-3 rounded-xl border border-slate-200"
+                ></textarea>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3.5 rounded-xl font-bold transition-all shadow-md"
+              >
+                Posting Penawaran Jasa
+              </button>
+            </form>
+          </div>
+        )}
+        <ChatView currentUser={currentUser} users={users} role="student" messages={messages} setMessages={setMessages} initialActiveChat={activeChatId} activeChatContext={activeChatContext} setActiveChatContext={setActiveChatContext} projects={projects} isChatOpen={isChatOpen || safeTab === 'pesan'} onClose={() => { setIsChatOpen(false); if(safeTab === 'pesan') setActiveTab('cari'); }} sendNotification={sendNotification} />
 
         {safeTab === 'cari' && (
           <div className="space-y-6">

@@ -20,7 +20,13 @@ import {
   ArrowUpRight,
   Sparkles,
   Camera,
-  Key
+  Key,
+  ShoppingBag,
+  Search,
+  Tag,
+  DollarSign,
+  Store,
+  GraduationCap
 } from 'lucide-react';
 import NotificationBell from '../common/NotificationBell.jsx';
 
@@ -40,7 +46,10 @@ export default function AdminDashboard({
   onMarkAllAsRead,
   onDeleteNotification,
   onClearAll,
-  sendNotification
+  sendNotification,
+  platformProfits = [],
+  studentServices = [],
+  serviceOrders = []
 }) {
   const [activeTab, setActiveTab] = React.useState('verifikasi');
   const [keuanganSubTab, setKeuanganSubTab] = React.useState('pending'); // 'pending' | 'history'
@@ -71,6 +80,11 @@ export default function AdminDashboard({
   const [previewDocModal, setPreviewDocModal] = React.useState(null);
   const [verifikasiFilter, setVerifikasiFilter] = React.useState('pending'); // 'pending' | 'all'
   const [verifikasiStatusFilter, setVerifikasiStatusFilter] = React.useState('all'); // 'all' | 'pending' | 'verified' | 'rejected' | 'no_doc'
+
+  // State for Monitoring Jasa & Pesanan
+  const [jasaSubTab, setJasaSubTab] = React.useState('orders'); // 'orders' | 'services'
+  const [jasaStatusFilter, setJasaStatusFilter] = React.useState('all'); // 'all' | 'Sedang Dikerjakan' | 'Menunggu Review' | 'Selesai' | 'Dibatalkan'
+  const [jasaSearch, setJasaSearch] = React.useState('');
 
   // Perlu Peninjauan: hanya pengguna yang BELUM diverifikasi, SUDAH unggah berkas, dan BELUM berstatus ditolak
   const pendingStudents = users.filter(u => u.role === 'student' && !u.verified && (u.verificationDoc || u.ktmUrl) && u.verificationStatus !== 'Rejected');
@@ -429,17 +443,49 @@ export default function AdminDashboard({
     setProjects(prev => prev.map(p => {
       if (p.id === projectId) {
         let paymentStatus = p.paymentStatus;
+        const budgetNum = Number(p.budget);
+        const escrowAmt = p.totalUmkmDeposit || budgetNum;
+
         if (winner === 'student' && p.paymentStatus !== 'Sudah Dibayar') {
           setUsers(usersList => usersList.map(u => {
             if (p.applicants.some(a => a.status === 'Diterima' && a.studentId === u.id)) {
-              return { ...u, balance: (u.balance || 0) + Number(p.budget) };
+              return { ...u, balance: (u.balance || 0) + budgetNum };
             }
-            if (u.id === p.umkmId) {
-              return { ...u, balance: (u.balance || 0) - Number(p.budget) };
+            if (u.id === p.umkmId && !p.isEscrowed) {
+              return { ...u, balance: (u.balance || 0) - budgetNum };
             }
             return u;
           }));
+          if (setCurrentUser) {
+            setCurrentUser(curr => {
+              if (!curr) return curr;
+              if (p.applicants.some(a => a.status === 'Diterima' && a.studentId === curr.id)) {
+                return { ...curr, balance: (curr.balance || 0) + budgetNum };
+              }
+              if (curr.id === p.umkmId && !p.isEscrowed) {
+                return { ...curr, balance: (curr.balance || 0) - budgetNum };
+              }
+              return curr;
+            });
+          }
           paymentStatus = 'Sudah Dibayar';
+        } else if (winner === 'umkm') {
+          if (p.isEscrowed) {
+            setUsers(usersList => usersList.map(u => {
+              if (u.id === p.umkmId) {
+                return { ...u, balance: (u.balance || 0) + escrowAmt };
+              }
+              return u;
+            }));
+            if (setCurrentUser) {
+              setCurrentUser(curr => {
+                if (curr && curr.id === p.umkmId) {
+                  return { ...curr, balance: (curr.balance || 0) + escrowAmt };
+                }
+                return curr;
+              });
+            }
+          }
         }
         return { 
           ...p, 
@@ -496,6 +542,8 @@ export default function AdminDashboard({
           {[
             { key: 'verifikasi', label: 'Verifikasi Akun', count: pendingStudents.length + pendingUMKMs.length },
             { key: 'keuangan', label: 'Transaksi Keuangan', count: pendingTransactions.length },
+            { key: 'jasa', label: 'Monitoring Jasa & Pesanan', count: serviceOrders.filter(o => o.status !== 'Selesai' && o.status !== 'Dibatalkan').length },
+            { key: 'pendapatan', label: 'Pendapatan Fee Platform', count: platformProfits.length },
             { key: 'moderasi', label: 'Mediasi / Banding', count: bandingProjects.length }
           ].map(tab => (
             <button
@@ -1233,6 +1281,495 @@ export default function AdminDashboard({
             </div>
           </div>
         )}
+
+        {activeTab === 'jasa' && (() => {
+          const totalOrdersCount = serviceOrders.length;
+          const activeOrders = serviceOrders.filter(o => o.status === 'Sedang Dikerjakan');
+          const reviewOrders = serviceOrders.filter(o => o.status === 'Menunggu Review' || o.status === 'Menunggu Review UMKM');
+          const completedOrders = serviceOrders.filter(o => o.status === 'Selesai');
+          const cancelledOrders = serviceOrders.filter(o => o.status === 'Dibatalkan');
+
+          const filteredOrders = serviceOrders.filter(order => {
+            const matchesStatus =
+              jasaStatusFilter === 'all' ||
+              (jasaStatusFilter === 'Menunggu Review' && (order.status === 'Menunggu Review' || order.status === 'Menunggu Review UMKM')) ||
+              order.status === jasaStatusFilter;
+            
+            const searchLower = jasaSearch.toLowerCase();
+            const matchesSearch =
+              !jasaSearch ||
+              order.serviceTitle?.toLowerCase().includes(searchLower) ||
+              order.umkmName?.toLowerCase().includes(searchLower) ||
+              (order.providerName || order.studentName)?.toLowerCase().includes(searchLower) ||
+              String(order.id).includes(searchLower);
+
+            return matchesStatus && matchesSearch;
+          });
+
+          const filteredServicesList = studentServices.filter(svc => {
+            const searchLower = jasaSearch.toLowerCase();
+            return (
+              !jasaSearch ||
+              svc.title?.toLowerCase().includes(searchLower) ||
+              svc.category?.toLowerCase().includes(searchLower) ||
+              (svc.providerName || svc.studentName)?.toLowerCase().includes(searchLower)
+            );
+          });
+
+          return (
+            <div className="space-y-6">
+              {/* Metric Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Pesanan Jasa</span>
+                    <ShoppingBag size={18} className="text-blue-600" />
+                  </div>
+                  <p className="text-2xl font-extrabold text-slate-900">{totalOrdersCount}</p>
+                  <p className="text-[11px] text-slate-400 mt-1">Transaksi Jasa Freelance</p>
+                </div>
+
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-amber-600 uppercase tracking-wider">Sedang Berjalan / Review</span>
+                    <Clock size={18} className="text-amber-600" />
+                  </div>
+                  <p className="text-2xl font-extrabold text-amber-700">{activeOrders.length + reviewOrders.length}</p>
+                  <p className="text-[11px] text-slate-400 mt-1">{activeOrders.length} Dikerjakan, {reviewOrders.length} Review</p>
+                </div>
+
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Pesanan Selesai</span>
+                    <CheckCircle2 size={18} className="text-emerald-600" />
+                  </div>
+                  <p className="text-2xl font-extrabold text-emerald-700">{completedOrders.length}</p>
+                  <p className="text-[11px] text-slate-400 mt-1">{cancelledOrders.length} Pesanan Dibatalkan</p>
+                </div>
+
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Total Katalog Jasa</span>
+                    <Store size={18} className="text-indigo-600" />
+                  </div>
+                  <p className="text-2xl font-extrabold text-indigo-700">{studentServices.length}</p>
+                  <p className="text-[11px] text-slate-400 mt-1">Layanan Mahasiswa & UMKM</p>
+                </div>
+              </div>
+
+              {/* Subtabs and Search */}
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
+                <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 w-full md:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => setJasaSubTab('orders')}
+                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
+                      jasaSubTab === 'orders' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <ShoppingBag size={14} />
+                    <span>Daftar Pesanan Jasa</span>
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-blue-100 text-blue-700 font-extrabold">
+                      {serviceOrders.length}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setJasaSubTab('services')}
+                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
+                      jasaSubTab === 'services' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Store size={14} />
+                    <span>Katalog Jasa Terdaftar</span>
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-200 text-slate-700 font-extrabold">
+                      {studentServices.length}
+                    </span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-3 w-full md:w-auto flex-1 md:max-w-md justify-end">
+                  <div className="relative w-full">
+                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder={jasaSubTab === 'orders' ? 'Cari ID, judul jasa, pembeli, penyedia...' : 'Cari judul jasa, kategori, pembuat...'}
+                      value={jasaSearch}
+                      onChange={(e) => setJasaSearch(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Filter for Orders */}
+              {jasaSubTab === 'orders' && (
+                <div className="flex flex-wrap items-center gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-200/80">
+                  <span className="text-xs font-bold text-slate-500 mr-1">Filter Status:</span>
+                  {[
+                    { id: 'all', label: 'Semua Status' },
+                    { id: 'Sedang Dikerjakan', label: 'Sedang Dikerjakan' },
+                    { id: 'Menunggu Review', label: 'Menunggu Review' },
+                    { id: 'Selesai', label: 'Selesai' },
+                    { id: 'Dibatalkan', label: 'Dibatalkan' }
+                  ].map(f => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setJasaStatusFilter(f.id)}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                        jasaStatusFilter === f.id
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Content Table: Orders */}
+              {jasaSubTab === 'orders' && (
+                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+                    <div>
+                      <h4 className="font-extrabold text-slate-900 text-base">Monitoring Pesanan Jasa ({filteredOrders.length})</h4>
+                      <p className="text-xs text-slate-500">Seluruh alur transaksi jasa dari pemesanan, hasil kerja, hingga serah terima saldo.</p>
+                    </div>
+                  </div>
+
+                  {filteredOrders.length === 0 ? (
+                    <div className="text-center py-16 text-slate-500">
+                      <ShoppingBag size={40} className="mx-auto text-slate-300 mb-2" />
+                      <p className="font-bold text-sm">Tidak ada pesanan jasa yang sesuai.</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50 text-slate-500 font-extrabold uppercase border-b border-slate-200/80">
+                          <tr>
+                            <th className="py-3.5 px-4">Order ID & Tanggal</th>
+                            <th className="py-3.5 px-4">Layanan Jasa</th>
+                            <th className="py-3.5 px-4">Pembeli (UMKM)</th>
+                            <th className="py-3.5 px-4">Penyedia</th>
+                            <th className="py-3.5 px-4 text-right">Nilai Transaksi</th>
+                            <th className="py-3.5 px-4 text-center">Status</th>
+                            <th className="py-3.5 px-4">Hasil Pekerjaan</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {filteredOrders.map(order => {
+                            const pName = order.providerName || order.studentName || 'Penyedia';
+                            const isUmkmProvider = order.providerRole === 'umkm';
+                            const isCompleted = order.status === 'Selesai';
+                            const isUnderReview = order.status === 'Menunggu Review' || order.status === 'Menunggu Review UMKM';
+                            const isCancelled = order.status === 'Dibatalkan';
+
+                            return (
+                              <tr key={order.id} className="hover:bg-slate-50/70 transition-colors">
+                                <td className="py-3.5 px-4 whitespace-nowrap">
+                                  <span className="font-mono font-bold text-slate-900 block">#{order.id}</span>
+                                  <span className="text-[11px] text-slate-400">{order.createdAt || '-'}</span>
+                                </td>
+                                <td className="py-3.5 px-4 max-w-xs">
+                                  <span className="font-extrabold text-slate-900 block truncate">{order.serviceTitle}</span>
+                                  {order.brief && (
+                                    <span className="text-[11px] text-slate-500 italic line-clamp-1">"{order.brief}"</span>
+                                  )}
+                                </td>
+                                <td className="py-3.5 px-4 whitespace-nowrap">
+                                  <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                                    <Store size={13} className="text-emerald-600 shrink-0" />
+                                    <span>{order.umkmName || 'UMKM'}</span>
+                                  </div>
+                                </td>
+                                <td className="py-3.5 px-4 whitespace-nowrap">
+                                  <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                                    {isUmkmProvider ? (
+                                      <Store size={13} className="text-emerald-600 shrink-0" />
+                                    ) : (
+                                      <GraduationCap size={13} className="text-blue-600 shrink-0" />
+                                    )}
+                                    <span>{pName}</span>
+                                  </div>
+                                  <span className="text-[10px] text-slate-400 block">
+                                    {isUmkmProvider ? 'Mitra UMKM' : 'Mahasiswa'}
+                                  </span>
+                                </td>
+                                <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                                  <span className="font-extrabold text-slate-900 block">
+                                    Rp {Number(order.price).toLocaleString('id-ID')}
+                                  </span>
+                                  <span className="text-[10px] text-emerald-600 font-bold block">
+                                    Bersih: Rp {Number(order.studentEarnings || order.price).toLocaleString('id-ID')}
+                                  </span>
+                                </td>
+                                <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                                  <span
+                                    className={`px-2.5 py-1 rounded-full text-[11px] font-extrabold inline-flex items-center gap-1 ${
+                                      isCompleted
+                                        ? 'bg-emerald-100 text-emerald-800'
+                                        : isCancelled
+                                        ? 'bg-rose-100 text-rose-800'
+                                        : isUnderReview
+                                        ? 'bg-blue-100 text-blue-800'
+                                        : 'bg-amber-100 text-amber-800'
+                                    }`}
+                                  >
+                                    {isCompleted ? <CheckCircle2 size={11} /> : isCancelled ? <XCircle size={11} /> : <Clock size={11} />}
+                                    {order.status}
+                                  </span>
+                                </td>
+                                <td className="py-3.5 px-4">
+                                  {order.submissionLink ? (
+                                    <a
+                                      href={order.submissionLink}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="font-bold text-blue-600 hover:underline flex items-center gap-1"
+                                    >
+                                      <ExternalLink size={12} /> Buka Link File
+                                    </a>
+                                  ) : (
+                                    <span className="text-slate-400 text-[11px] italic">Belum dikirim</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Content Table: Catalog */}
+              {jasaSubTab === 'services' && (
+                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="p-5 border-b border-slate-100">
+                    <h4 className="font-extrabold text-slate-900 text-base">Katalog Jasa Aktif Terdaftar ({filteredServicesList.length})</h4>
+                    <p className="text-xs text-slate-500">Daftar paket jasa yang ditawarkan oleh mahasiswa maupun mitra UMKM.</p>
+                  </div>
+
+                  {filteredServicesList.length === 0 ? (
+                    <div className="text-center py-16 text-slate-500">
+                      <Store size={40} className="mx-auto text-slate-300 mb-2" />
+                      <p className="font-bold text-sm">Tidak ada katalog jasa yang ditemukan.</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50 text-slate-500 font-extrabold uppercase border-b border-slate-200/80">
+                          <tr>
+                            <th className="py-3.5 px-4">Judul Jasa & ID</th>
+                            <th className="py-3.5 px-4">Penyedia Jasa</th>
+                            <th className="py-3.5 px-4">Kategori</th>
+                            <th className="py-3.5 px-4">Tipe & Estimasi</th>
+                            <th className="py-3.5 px-4 text-right">Tarif Jasa</th>
+                            <th className="py-3.5 px-4 text-center">Status Fee</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {filteredServicesList.map(svc => {
+                            const pName = svc.providerName || svc.studentName || 'Penyedia';
+                            const isUmkmProvider = svc.providerRole === 'umkm' || (!svc.studentId && svc.umkmId);
+
+                            return (
+                              <tr key={svc.id} className="hover:bg-slate-50/70 transition-colors">
+                                <td className="py-3.5 px-4 max-w-xs">
+                                  <span className="font-extrabold text-slate-900 block truncate">{svc.title}</span>
+                                  <span className="text-[11px] text-slate-400 font-mono">ID: #{svc.id}</span>
+                                </td>
+                                <td className="py-3.5 px-4 whitespace-nowrap">
+                                  <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                                    {isUmkmProvider ? (
+                                      <Store size={13} className="text-emerald-600 shrink-0" />
+                                    ) : (
+                                      <GraduationCap size={13} className="text-blue-600 shrink-0" />
+                                    )}
+                                    <span>{pName}</span>
+                                  </div>
+                                  <span className="text-[10px] text-slate-400 block">
+                                    {isUmkmProvider ? 'Mitra UMKM' : 'Mahasiswa'}
+                                  </span>
+                                </td>
+                                <td className="py-3.5 px-4 whitespace-nowrap">
+                                  <span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg font-bold">
+                                    {svc.category || 'Umum'}
+                                  </span>
+                                </td>
+                                <td className="py-3.5 px-4 whitespace-nowrap">
+                                  <span className="font-medium text-slate-700 block">
+                                    {svc.type === 'Offline' ? '📍 Offline' : '🌐 Online'}
+                                  </span>
+                                  <span className="text-[11px] text-slate-400">{svc.deliveryTime || '1-3 hari'}</span>
+                                </td>
+                                <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                                  <span className="font-extrabold text-slate-900 block">
+                                    Rp {Number(svc.price).toLocaleString('id-ID')}
+                                  </span>
+                                </td>
+                                <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                                  {Number(svc.price) < 50000 ? (
+                                    <span className="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded text-[10px]">
+                                      Free Fee (0%)
+                                    </span>
+                                  ) : (
+                                    <span className="bg-blue-50 text-blue-700 font-bold px-2 py-0.5 rounded text-[10px]">
+                                      Fee Platform 10%
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
+        {activeTab === 'pendapatan' && (() => {
+          const totalProfit = platformProfits.reduce((acc, p) => acc + (p.feeAmount || 0), 0);
+          const projectProfits = platformProfits.filter(p => p.sourceType === 'project').reduce((acc, p) => acc + (p.feeAmount || 0), 0);
+          const serviceProfits = platformProfits.filter(p => p.sourceType === 'service').reduce((acc, p) => acc + (p.feeAmount || 0), 0);
+
+          return (
+            <div className="space-y-6">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-gradient-to-br from-blue-600 to-indigo-700 text-white p-6 rounded-3xl shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-bold uppercase tracking-wider text-blue-100">Total Kas Fee Platform</span>
+                    <Sparkles size={20} className="text-blue-200" />
+                  </div>
+                  <h4 className="text-3xl font-extrabold">Rp {totalProfit.toLocaleString('id-ID')}</h4>
+                  <p className="text-xs text-blue-100 mt-2">Akumulasi komisi bersih yang diperoleh GigSkill</p>
+                </div>
+
+                <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Fee Proyek UMKM (10%)</span>
+                    <Briefcase size={20} className="text-blue-600" />
+                  </div>
+                  <h4 className="text-2xl font-extrabold text-slate-900">Rp {projectProfits.toLocaleString('id-ID')}</h4>
+                  <p className="text-xs text-slate-500 mt-2">Dikenakan ke UMKM untuk proyek &gt; Rp 100.000</p>
+                </div>
+
+                <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Fee Jasa Mahasiswa (10%)</span>
+                    <Sparkles size={20} className="text-purple-600" />
+                  </div>
+                  <h4 className="text-2xl font-extrabold text-slate-900">Rp {serviceProfits.toLocaleString('id-ID')}</h4>
+                  <p className="text-xs text-slate-500 mt-2">Dipotong dari mahasiswa untuk jasa &gt; Rp 100.000</p>
+                </div>
+              </div>
+
+              {/* Policy Explanation Banner */}
+              <div className="bg-emerald-50 border border-emerald-200 rounded-3xl p-6">
+                <div className="flex items-start gap-4">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-500 text-white flex items-center justify-center shrink-0">
+                    <ShieldCheck size={22} />
+                  </div>
+                  <div>
+                    <h4 className="text-base font-extrabold text-emerald-950 mb-1">
+                      Kebijakan &amp; Ketentuan Fee Platform GigSkill
+                    </h4>
+                    <p className="text-xs text-emerald-900 leading-relaxed">
+                      Sesuai aturan operasional:
+                    </p>
+                    <ul className="mt-2 space-y-1.5 text-xs text-emerald-900 list-disc list-inside">
+                      <li>
+                        <strong>Strategi Bebas Biaya (Promo Traffic):</strong> Proyek lowongan atau penawaran jasa dengan nilai <strong>&le; Rp 100.000</strong> digratiskan dari segala potongan platform (<strong>0% Fee</strong>).
+                      </li>
+                      <li>
+                        <strong>Lowongan Proyek (Posting oleh UMKM):</strong> Untuk nilai &gt; Rp 100.000, komisi flat <strong>10% dibebankan ke UMKM</strong> saat pembayaran/deposit. Mahasiswa menerima honor 100% utuh tanpa potongan.
+                      </li>
+                      <li>
+                        <strong>Penawaran Jasa/Produk (Posting oleh Mahasiswa):</strong> Untuk nilai &gt; Rp 100.000, komisi flat <strong>10% dipotong dari honor mahasiswa</strong> saat pesanan disetujui UMKM. UMKM membayar harga pas tanpa biaya tambahan.
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* Profit Logs Table */}
+              <div className="bg-white p-6 md:p-8 rounded-3xl border border-slate-200 shadow-sm">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h3 className="text-xl font-extrabold text-slate-900">Log Pendapatan Fee Platform</h3>
+                    <p className="text-xs text-slate-500 mt-1">Daftar transaksi terselesaikan yang menghasilkan komisi bagi GigSkill.</p>
+                  </div>
+                  <span className="text-xs font-bold bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full border border-blue-200">
+                    {platformProfits.length} Catatan Fee
+                  </span>
+                </div>
+
+                {platformProfits.length === 0 ? (
+                  <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                    <Sparkles size={36} className="mx-auto text-slate-400 mb-2" />
+                    <p className="text-slate-700 font-bold">Belum Ada Transaksi Fee</p>
+                    <p className="text-xs text-slate-500 mt-1">Komisi platform akan tercatat otomatis saat proyek atau pesanan jasa bernilai &gt; Rp 100.000 diselesaikan.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500 uppercase font-extrabold tracking-wider border-b border-slate-200">
+                        <tr>
+                          <th className="py-3 px-4">Tanggal</th>
+                          <th className="py-3 px-4">Jenis Sumber</th>
+                          <th className="py-3 px-4">Judul Pekerjaan</th>
+                          <th className="py-3 px-4">Klien (Pembayar)</th>
+                          <th className="py-3 px-4">Penyedia Jasa</th>
+                          <th className="py-3 px-4 text-right">Nilai Pokok</th>
+                          <th className="py-3 px-4 text-center">Tarif Fee</th>
+                          <th className="py-3 px-4 text-right font-black text-blue-700">Fee Masuk</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {platformProfits.map((item) => (
+                          <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
+                            <td className="py-3.5 px-4 font-medium text-slate-600 whitespace-nowrap">{item.date}</td>
+                            <td className="py-3.5 px-4 whitespace-nowrap">
+                              <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] ${
+                                item.sourceType === 'project'
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : 'bg-purple-100 text-purple-800'
+                              }`}>
+                                {item.sourceType === 'project' ? 'Proyek UMKM' : 'Jasa Mahasiswa'}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-4 font-bold text-slate-900 max-w-xs truncate">{item.title}</td>
+                            <td className="py-3.5 px-4 text-slate-700 whitespace-nowrap">{item.clientName}</td>
+                            <td className="py-3.5 px-4 text-slate-700 whitespace-nowrap">{item.providerName}</td>
+                            <td className="py-3.5 px-4 text-right font-medium text-slate-600 whitespace-nowrap">
+                              Rp {Number(item.baseAmount).toLocaleString('id-ID')}
+                            </td>
+                            <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                              <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-bold text-[10px]">
+                                {(item.feeRate * 100).toFixed(0)}%
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-4 text-right font-extrabold text-blue-700 whitespace-nowrap">
+                              + Rp {Number(item.feeAmount).toLocaleString('id-ID')}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {activeTab === 'moderasi' && (
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">

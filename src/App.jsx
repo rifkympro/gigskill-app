@@ -5,7 +5,8 @@ import {
   X
 } from 'lucide-react';
 
-import { initialUsers, initialProjects, initialMessages, initialNotifications } from './data/initialData.js';
+import { initialUsers, initialProjects, initialMessages, initialNotifications, initialStudentServices, initialServiceOrders } from './data/initialData.js';
+import { calculateProjectFee, calculateServiceFee, FREE_FEE_THRESHOLD } from './utils/feeCalculator.js';
 import Navbar from './components/common/Navbar.jsx';
 import Footer from './components/common/Footer.jsx';
 import LandingPage from './components/landing/LandingPage.jsx';
@@ -132,6 +133,56 @@ export default function App() {
     }
     return initialNotifications;
   });
+  const [studentServices, setStudentServices] = React.useState(() => {
+    const saved = localStorage.getItem('gigskill_student_services');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const hasUmkm = parsed.some(s => s.providerRole === 'umkm');
+          if (!hasUmkm) {
+            const umkmInit = initialStudentServices.filter(s => s.providerRole === 'umkm');
+            return [...parsed, ...umkmInit];
+          }
+          return parsed;
+        }
+      } catch (e) {}
+    }
+    return initialStudentServices;
+  });
+  const [serviceOrders, setServiceOrders] = React.useState(() => {
+    const saved = localStorage.getItem('gigskill_service_orders');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {}
+    }
+    return initialServiceOrders;
+  });
+  const [platformProfits, setPlatformProfits] = React.useState(() => {
+    const saved = localStorage.getItem('gigskill_platform_profits');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {}
+    }
+    return [
+      {
+        id: 'prof_demo_1',
+        sourceType: 'project',
+        sourceId: 'p2',
+        title: 'Pengembangan Website E-Commerce Toko Baju',
+        clientName: 'Toko Kue Ibu Tin (UMKM)',
+        providerName: 'Rian Pratama (Mahasiswa)',
+        baseAmount: 1500000,
+        feeRate: 0.10,
+        feeAmount: 150000,
+        date: '20/09/2026'
+      }
+    ];
+  });
   const [footerPopup, setFooterPopup] = React.useState(null);
   const [activeChatContext, setActiveChatContext] = React.useState(null);
   const [verifyCertCode, setVerifyCertCode] = useState('');
@@ -173,6 +224,15 @@ export default function App() {
   React.useEffect(() => {
     localStorage.setItem('gigskill_notifications', JSON.stringify(notifications));
   }, [notifications]);
+  React.useEffect(() => {
+    localStorage.setItem('gigskill_student_services', JSON.stringify(studentServices));
+  }, [studentServices]);
+  React.useEffect(() => {
+    localStorage.setItem('gigskill_service_orders', JSON.stringify(serviceOrders));
+  }, [serviceOrders]);
+  React.useEffect(() => {
+    localStorage.setItem('gigskill_platform_profits', JSON.stringify(platformProfits));
+  }, [platformProfits]);
   const [currentUser, setCurrentUser] = useState(null);
 
   const sendNotification = (notifData) => {
@@ -336,16 +396,38 @@ export default function App() {
   const handlePostProject = (projectData) => {
     const umkmBalance = Number(currentUser?.balance || 0);
     const projectBudget = Number(projectData.budget || 0);
+    const feeInfo = calculateProjectFee(projectBudget);
+    const totalRequiredDeposit = feeInfo.totalUmkmDeposit;
 
     if (umkmBalance <= 0) {
       showToast('Saldo Anda Rp 0! Silakan lakukan Top Up terlebih dahulu sebelum memposting project agar saldo tidak minus.', 'error');
       return false;
     }
 
-    if (projectBudget > umkmBalance) {
-      showToast(`Budget project (Rp ${projectBudget.toLocaleString('id-ID')}) melebihi saldo dompet Anda (Rp ${umkmBalance.toLocaleString('id-ID')}). Silakan top up saldo terlebih dahulu.`, 'error');
+    if (totalRequiredDeposit > umkmBalance) {
+      showToast(
+        `Saldo tidak cukup! Total yang dibutuhkan untuk project ini adalah Rp ${totalRequiredDeposit.toLocaleString('id-ID')} (${feeInfo.isFree ? 'Promo Bebas Biaya Platform' : 'termasuk biaya layanan 10% Rp ' + feeInfo.platformFee.toLocaleString('id-ID')}). Saldo Anda: Rp ${umkmBalance.toLocaleString('id-ID')}. Silakan top up terlebih dahulu.`,
+        'error'
+      );
       return false;
     }
+
+    // Potong saldo UMKM untuk dialokasikan ke penampungan Escrow platform
+    setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, balance: Math.max(0, (u.balance || 0) - totalRequiredDeposit) } : u));
+    setCurrentUser(curr => (curr ? { ...curr, balance: Math.max(0, (curr.balance || 0) - totalRequiredDeposit) } : curr));
+
+    const escrowTx = {
+      id: 'tx_' + Date.now(),
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userRole: 'umkm',
+      type: 'project_escrow',
+      amount: totalRequiredDeposit,
+      status: 'Disetujui',
+      accountDetails: `Alokasi Dana Escrow: "${projectData.title}"`,
+      date: new Date().toLocaleDateString('id-ID')
+    };
+    setTransactions(prev => [escrowTx, ...prev]);
 
     const newProject = {
       id: 'p_' + Date.now(),
@@ -354,6 +436,12 @@ export default function App() {
       verified: true,
       applicants: [],
       ...projectData,
+      budget: projectBudget,
+      platformFee: feeInfo.platformFee,
+      totalUmkmDeposit: totalRequiredDeposit,
+      isFreeFee: feeInfo.isFree,
+      isEscrowed: true,
+      escrowAmount: totalRequiredDeposit,
       offlineVerificationCode: projectData.type === 'Offline' 
         ? (projectData.offlineVerificationCode || Math.floor(1000 + Math.random() * 9000).toString()) 
         : undefined,
@@ -367,7 +455,7 @@ export default function App() {
       role: 'umkm',
       type: 'project_posted',
       title: 'Lowongan Proyek Diterbitkan! 🚀',
-      message: `Proyek "${projectData.title}" dengan honor Rp ${projectBudget.toLocaleString('id-ID')} telah online dan siap dilamar mahasiswa.`,
+      message: `Proyek "${projectData.title}" dengan honor Rp ${projectBudget.toLocaleString('id-ID')} (${feeInfo.isFree ? 'Promo Free Fee 0%' : 'Biaya Layanan 10%'}) telah online dan siap dilamar mahasiswa.`,
       actionType: 'open_project',
       contextId: newProject.id
     });
@@ -518,21 +606,48 @@ export default function App() {
       if (p.id === projectId && p.status === 'Menunggu Review') {
         if (isAccepted) {
           if (p.paymentStatus === 'Sudah Dibayar') return { ...p, status: 'Selesai' };
+
+          const budgetNum = Number(p.budget);
+          const feeInfo = calculateProjectFee(budgetNum);
+          const totalUmkmDeduction = p.totalUmkmDeposit || feeInfo.totalUmkmDeposit;
+          const studentReceives = budgetNum; // Mahasiswa menerima 100% utuh karena fee dibebankan ke UMKM
+
           setUsers(usersList => usersList.map(u => {
-            if (u.id === p.umkmId) return { ...u, balance: (u.balance || 0) - Number(p.budget) };
+            if (u.id === p.umkmId && !p.isEscrowed) return { ...u, balance: (u.balance || 0) - totalUmkmDeduction };
             if (p.applicants.some(a => a.status === 'Diterima' && a.studentId === u.id)) {
-               return { ...u, balance: (u.balance || 0) + Number(p.budget) };
+               return { ...u, balance: (u.balance || 0) + studentReceives };
             }
             return u;
           }));
           setCurrentUser(curr => {
             if (!curr) return curr;
-            if (curr.id === p.umkmId) return { ...curr, balance: (curr.balance || 0) - Number(p.budget) };
+            if (curr.id === p.umkmId && !p.isEscrowed) return { ...curr, balance: (curr.balance || 0) - totalUmkmDeduction };
             if (p.applicants.some(a => a.status === 'Diterima' && a.studentId === curr.id)) {
-              return { ...curr, balance: (curr.balance || 0) + Number(p.budget) };
+              return { ...curr, balance: (curr.balance || 0) + studentReceives };
             }
             return curr;
           });
+
+          // Catat keuntungan komisi fee platform jika > 0
+          if (feeInfo.platformFee > 0) {
+            const studentApplicant = p.applicants.find(a => a.status === 'Diterima');
+            setPlatformProfits(prevProf => [
+              {
+                id: 'prof_' + Date.now(),
+                sourceType: 'project',
+                sourceId: p.id,
+                title: p.title,
+                clientName: `${p.umkmName} (UMKM)`,
+                providerName: studentApplicant?.studentName || 'Mahasiswa',
+                baseAmount: budgetNum,
+                feeRate: 0.10,
+                feeAmount: feeInfo.platformFee,
+                date: new Date().toLocaleDateString('id-ID')
+              },
+              ...prevProf
+            ]);
+          }
+
           return { ...p, status: 'Selesai', paymentStatus: 'Sudah Dibayar', completedAt: new Date().toLocaleDateString('id-ID') };
         } else {
           return { 
@@ -590,6 +705,329 @@ export default function App() {
     }
 
     showToast(isAccepted ? 'Project diselesaikan & Saldo ditransfer!' : 'Project dikembalikan untuk Banding.');
+  };
+
+  // Handlers untuk Jasa & Penawaran (Mahasiswa & UMKM)
+  const handleCreateStudentService = (serviceData) => {
+    const isUmkm = currentUser?.role === 'umkm';
+    const newService = {
+      id: 'svc_' + Date.now(),
+      providerRole: isUmkm ? 'umkm' : 'student',
+      providerId: currentUser.id,
+      providerName: currentUser.name,
+      providerCategory: isUmkm ? (currentUser.category || 'Mitra UMKM') : (currentUser.univ || 'Universitas'),
+      providerRating: currentUser.rating || 5.0,
+      studentId: isUmkm ? null : currentUser.id,
+      studentName: isUmkm ? null : currentUser.name,
+      studentUniv: isUmkm ? null : (currentUser.univ || 'Universitas'),
+      studentRating: currentUser.rating || 5.0,
+      umkmId: isUmkm ? currentUser.id : null,
+      umkmName: isUmkm ? currentUser.name : null,
+      createdAt: new Date().toLocaleDateString('id-ID'),
+      status: 'active',
+      ...serviceData
+    };
+    setStudentServices(prev => [newService, ...prev]);
+
+    sendNotification({
+      userId: currentUser.id,
+      role: currentUser.role,
+      type: 'service_created',
+      title: 'Penawaran Jasa Berhasil Diterbitkan! 🚀',
+      message: `Penawaran "${serviceData.title}" kini telah tayang di katalog jasa dan siap dipesan mitra.`,
+      actionType: isUmkm ? 'open_umkm_services' : 'open_student_services',
+      contextId: newService.id
+    });
+
+    showToast('Penawaran jasa berhasil diterbitkan ke katalog!', 'success');
+  };
+
+  const handleDeleteStudentService = (serviceId) => {
+    setStudentServices(prev => prev.filter(s => s.id !== serviceId));
+    showToast('Penawaran jasa berhasil dihapus.', 'info');
+  };
+
+  const handleOrderStudentService = (serviceId, briefNotes) => {
+    const service = studentServices.find(s => s.id === serviceId);
+    if (!service) return false;
+
+    const providerId = service.providerId || service.studentId || service.umkmId;
+    const providerRole = service.providerRole || (service.studentId ? 'student' : 'umkm');
+    const providerName = service.providerName || service.studentName || service.umkmName || 'Penyedia Jasa';
+
+    const umkmBalance = Number(currentUser?.balance || 0);
+    const priceNum = Number(service.price);
+    const feeInfo = calculateServiceFee(priceNum);
+
+    if (umkmBalance < priceNum) {
+      showToast(`Saldo tidak cukup! Harga jasa: Rp ${priceNum.toLocaleString('id-ID')}, Saldo Anda: Rp ${umkmBalance.toLocaleString('id-ID')}.`, 'error');
+      return false;
+    }
+
+    // Kurangi saldo UMKM pemesan (Harga pas, pemesan tidak dibebankan fee tambahan)
+    setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, balance: (u.balance || 0) - priceNum } : u));
+    setCurrentUser(curr => curr ? { ...curr, balance: (curr.balance || 0) - priceNum } : curr);
+
+    const newOrder = {
+      id: 'ord_' + Date.now(),
+      serviceId: service.id,
+      serviceTitle: service.title,
+      providerId: providerId,
+      providerName: providerName,
+      providerRole: providerRole,
+      studentId: service.studentId || (providerRole === 'student' ? providerId : null),
+      studentName: service.studentName || (providerRole === 'student' ? providerName : null),
+      umkmId: currentUser.id,
+      umkmName: currentUser.name,
+      price: priceNum,
+      isFreeFee: feeInfo.isFree,
+      platformFee: feeInfo.platformFee,
+      studentEarnings: feeInfo.studentEarnings,
+      providerEarnings: feeInfo.studentEarnings,
+      brief: briefNotes,
+      status: 'Sedang Dikerjakan',
+      createdAt: new Date().toLocaleDateString('id-ID'),
+      submissionLink: '',
+      submissionNotes: ''
+    };
+
+    setServiceOrders(prev => [newOrder, ...prev]);
+
+    // Notifikasi ke penyedia jasa (Mahasiswa atau sesama UMKM)
+    sendNotification({
+      userId: providerId,
+      role: providerRole,
+      type: 'service_order_received',
+      title: 'Pesanan Jasa Baru Diterima! 🛍️',
+      message: `${currentUser.name} memesan "${service.title}" seharga Rp ${priceNum.toLocaleString('id-ID')}. Silakan cek tab pesanan masuk Anda.`,
+      actionType: providerRole === 'umkm' ? 'open_umkm_services' : 'open_student_services',
+      contextId: newOrder.id
+    });
+
+    sendNotification({
+      userId: currentUser.id,
+      role: 'umkm',
+      type: 'service_order_created',
+      title: 'Pesanan Jasa Berhasil Dibuat ✅',
+      message: `Pesanan "${service.title}" berhasil diproses. Penyedia jasa akan segera mengerjakan pesanan Anda.`,
+      actionType: 'open_umkm_services',
+      contextId: newOrder.id
+    });
+
+    showToast('Pesanan jasa berhasil dibuat! Saldo telah dialokasikan dengan aman.', 'success');
+    return true;
+  };
+
+  const handleSubmitServiceWork = (orderId, submissionData) => {
+    const order = serviceOrders.find(o => o.id === orderId);
+    setServiceOrders(prev => prev.map(o => {
+      if (o.id === orderId) {
+        return {
+          ...o,
+          status: 'Menunggu Review UMKM',
+          submissionLink: submissionData.submissionLink,
+          submissionNotes: submissionData.submissionNotes,
+          submittedAt: submissionData.submittedAt
+        };
+      }
+      return o;
+    }));
+
+    if (order) {
+      sendNotification({
+        userId: order.umkmId,
+        role: 'umkm',
+        type: 'service_work_submitted',
+        title: 'Hasil Pekerjaan Jasa Diserahkan 📦',
+        message: `${currentUser?.name} telah menyerahkan hasil pekerjaan untuk "${order.serviceTitle}". Silakan tinjau dan konfirmasi.`,
+        actionType: 'open_umkm_services',
+        contextId: order.id
+      });
+    }
+
+    showToast('Hasil pekerjaan berhasil dikirim ke pemesan!', 'success');
+  };
+
+  const handleCompleteServiceOrder = (orderId, reviewData) => {
+    const order = serviceOrders.find(o => o.id === orderId);
+    if (!order || order.status === 'Selesai') return;
+
+    const providerEarnings = order.studentEarnings;
+    const providerId = order.providerId || order.studentId;
+    const providerRole = order.providerRole || (order.studentId ? 'student' : 'umkm');
+    const providerName = order.providerName || order.studentName || 'Penyedia Jasa';
+
+    setUsers(prev => prev.map(u => {
+      if (u.id === providerId) {
+        const userReviews = u.userReviews || [];
+        const updatedReviews = reviewData
+          ? [...userReviews, { ...reviewData, projectTitle: order.serviceTitle, date: new Date().toLocaleDateString('id-ID') }]
+          : userReviews;
+        const avgRating = updatedReviews.length > 0
+          ? (updatedReviews.reduce((sum, r) => sum + Number(r.rating), 0) / updatedReviews.length).toFixed(1)
+          : u.rating;
+
+        return {
+          ...u,
+          balance: (u.balance || 0) + providerEarnings,
+          rating: Number(avgRating),
+          userReviews: updatedReviews
+        };
+      }
+      return u;
+    }));
+
+    if (currentUser && currentUser.id === providerId) {
+      setCurrentUser(curr => ({ ...curr, balance: (curr.balance || 0) + providerEarnings }));
+    }
+
+    setServiceOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'Selesai', completedAt: new Date().toLocaleDateString('id-ID') } : o));
+
+    if (order.platformFee > 0) {
+      setPlatformProfits(prev => [
+        {
+          id: 'prof_' + Date.now(),
+          sourceType: 'service',
+          sourceId: order.id,
+          title: order.serviceTitle,
+          clientName: `${order.umkmName} (UMKM)`,
+          providerName: `${providerName} (${providerRole === 'umkm' ? 'UMKM' : 'Mahasiswa'})`,
+          baseAmount: order.price,
+          feeRate: 0.10,
+          feeAmount: order.platformFee,
+          date: new Date().toLocaleDateString('id-ID')
+        },
+        ...prev
+      ]);
+    }
+
+    sendNotification({
+      userId: providerId,
+      role: providerRole,
+      type: 'service_order_completed',
+      title: 'Pesanan Selesai & Saldo Masuk! 💰',
+      message: `Pesanan "${order.serviceTitle}" disetujui ${order.umkmName}. Saldo bersih Rp ${providerEarnings.toLocaleString('id-ID')} telah masuk ke dompet Anda!`,
+      actionType: 'open_wallet',
+      contextId: order.id
+    });
+
+    sendNotification({
+      userId: order.umkmId,
+      role: 'umkm',
+      type: 'service_order_completed',
+      title: 'Pesanan Berhasil Diselesaikan ✅',
+      message: `Anda telah menyetujui hasil kerja untuk "${order.serviceTitle}". Pesanan telah selesai dengan sukses!`,
+      actionType: 'open_umkm_services',
+      contextId: order.id
+    });
+
+    showToast('Pesanan jasa telah disetujui & pembayaran telah diteruskan ke penyedia!', 'success');
+  };
+
+  const handleCancelServiceOrder = (orderId, reason = 'Dibatalkan oleh UMKM') => {
+    const order = serviceOrders.find(o => o.id === orderId);
+    if (!order || order.status === 'Selesai' || order.status === 'Dibatalkan') return;
+
+    const refundPrice = Number(order.price || 0);
+
+    if (refundPrice > 0) {
+      setUsers(prev => prev.map(u => u.id === order.umkmId ? { ...u, balance: (u.balance || 0) + refundPrice } : u));
+      setCurrentUser(curr => (curr && curr.id === order.umkmId ? { ...curr, balance: (curr.balance || 0) + refundPrice } : curr));
+
+      const refundTx = {
+        id: 'tx_' + Date.now(),
+        userId: order.umkmId,
+        userName: order.umkmName,
+        userRole: 'umkm',
+        type: 'refund_service',
+        amount: refundPrice,
+        status: 'Disetujui',
+        accountDetails: 'Pengembalian Dana Pembatalan Pesanan Jasa #' + order.id,
+        date: new Date().toLocaleDateString('id-ID')
+      };
+      setTransactions(prev => [refundTx, ...prev]);
+    }
+
+    setServiceOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'Dibatalkan', cancelReason: reason, cancelledAt: new Date().toLocaleDateString('id-ID') } : o));
+
+    const providerId = order.providerId || order.studentId;
+    const providerRole = order.providerRole || (order.studentId ? 'student' : 'umkm');
+
+    sendNotification({
+      userId: order.umkmId,
+      role: 'umkm',
+      type: 'service_order_cancelled',
+      title: 'Pesanan Jasa Dibatalkan ↩️',
+      message: `Pesanan "${order.serviceTitle}" telah dibatalkan. Dana sebesar Rp ${refundPrice.toLocaleString('id-ID')} telah dikembalikan penuh ke dompet Anda.`,
+      actionType: 'open_wallet',
+      contextId: order.id
+    });
+
+    if (providerId) {
+      sendNotification({
+        userId: providerId,
+        role: providerRole,
+        type: 'service_order_cancelled',
+        title: 'Pesanan Jasa Dibatalkan 📢',
+        message: `Pesanan "${order.serviceTitle}" dari ${order.umkmName} telah dibatalkan.`,
+        actionType: providerRole === 'umkm' ? 'open_umkm_services' : 'open_student_services',
+        contextId: order.id
+      });
+    }
+
+    showToast(`Pesanan jasa berhasil dibatalkan dan saldo Rp ${refundPrice.toLocaleString('id-ID')} telah dikembalikan ke dompet!`, 'info');
+  };
+
+  const handleCancelProject = (projectId, reason = 'Dibatalkan oleh UMKM') => {
+    const project = projects.find(p => p.id === projectId);
+    if (!project || project.status === 'Selesai' || project.status === 'Dibatalkan') return;
+
+    const refundAmount = project.totalUmkmDeposit || project.budget || 0;
+
+    if (project.isEscrowed && refundAmount > 0) {
+      setUsers(prev => prev.map(u => u.id === project.umkmId ? { ...u, balance: (u.balance || 0) + Number(refundAmount) } : u));
+      setCurrentUser(curr => (curr && curr.id === project.umkmId ? { ...curr, balance: (curr.balance || 0) + Number(refundAmount) } : curr));
+
+      const refundTx = {
+        id: 'tx_' + Date.now(),
+        userId: project.umkmId,
+        userName: project.umkmName,
+        userRole: 'umkm',
+        type: 'refund_project',
+        amount: Number(refundAmount),
+        status: 'Disetujui',
+        accountDetails: 'Pengembalian Dana Escrow Lowongan: ' + project.title,
+        date: new Date().toLocaleDateString('id-ID')
+      };
+      setTransactions(prev => [refundTx, ...prev]);
+    }
+
+    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, status: 'Dibatalkan', cancelReason: reason, cancelledAt: new Date().toLocaleDateString('id-ID') } : p));
+
+    sendNotification({
+      userId: project.umkmId,
+      role: 'umkm',
+      type: 'project_cancelled',
+      title: 'Proyek Dibatalkan & Saldo Dikembalikan ↩️',
+      message: `Lowongan proyek "${project.title}" telah dibatalkan. Dana escrow sebesar Rp ${Number(refundAmount).toLocaleString('id-ID')} telah dikembalikan penuh ke dompet Anda.`,
+      actionType: 'open_wallet',
+      contextId: project.id
+    });
+
+    if (project.applicants && project.applicants.length > 0) {
+      project.applicants.forEach(app => {
+        sendNotification({
+          userId: app.studentId,
+          role: 'student',
+          type: 'project_cancelled',
+          title: 'Lowongan Proyek Dibatalkan 📢',
+          message: `Lowongan proyek "${project.title}" yang Anda lamar telah dibatalkan oleh pihak UMKM.`,
+          actionType: 'open_cari'
+        });
+      });
+    }
+
+    showToast(`Proyek berhasil dibatalkan dan saldo Rp ${Number(refundAmount).toLocaleString('id-ID')} telah dikembalikan ke dompet!`, 'info');
   };
 
   const handleAddReview = (projectId, reviewData) => {
@@ -890,6 +1328,13 @@ export default function App() {
               onDeleteNotification={handleDeleteNotification}
               onClearAll={handleClearAllNotifications}
               sendNotification={sendNotification}
+              studentServices={studentServices}
+              onCreateStudentService={handleCreateStudentService}
+              onDeleteStudentService={handleDeleteStudentService}
+              serviceOrders={serviceOrders}
+              onSubmitServiceWork={handleSubmitServiceWork}
+              onCancelServiceOrder={handleCancelServiceOrder}
+              showToast={showToast}
             />
           )}
 
@@ -901,6 +1346,7 @@ export default function App() {
               users={users}
               projects={projects}
               onPostProject={handlePostProject}
+              onCancelProject={handleCancelProject}
               onUpdateApplicantStatus={handleUpdateApplicantStatus}
               messages={messages}
               setMessages={setMessages}
@@ -918,6 +1364,15 @@ export default function App() {
               onDeleteNotification={handleDeleteNotification}
               onClearAll={handleClearAllNotifications}
               sendNotification={sendNotification}
+              studentServices={studentServices}
+              serviceOrders={serviceOrders}
+              onOrderStudentService={handleOrderStudentService}
+              onCompleteServiceOrder={handleCompleteServiceOrder}
+              onCancelServiceOrder={handleCancelServiceOrder}
+              onCreateStudentService={handleCreateStudentService}
+              onDeleteStudentService={handleDeleteStudentService}
+              onSubmitServiceWork={handleSubmitServiceWork}
+              showToast={showToast}
             />
           )}
 
@@ -939,6 +1394,10 @@ export default function App() {
               onDeleteNotification={handleDeleteNotification}
               onClearAll={handleClearAllNotifications}
               sendNotification={sendNotification}
+              platformProfits={platformProfits}
+              studentServices={studentServices}
+              serviceOrders={serviceOrders}
+              onCancelServiceOrder={handleCancelServiceOrder}
             />
           )}
 
