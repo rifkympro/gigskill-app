@@ -1661,7 +1661,25 @@ export default function StudentDashboard({
             </form>
           </div>
         )}
-        <ChatView currentUser={currentUser} users={users} role="student" messages={messages} setMessages={setMessages} initialActiveChat={activeChatId} activeChatContext={activeChatContext} setActiveChatContext={setActiveChatContext} projects={projects} isChatOpen={isChatOpen || safeTab === 'pesan'} onClose={() => { setIsChatOpen(false); if(safeTab === 'pesan') setActiveTab('cari'); }} sendNotification={sendNotification} />
+        <ChatView
+          currentUser={currentUser}
+          users={users}
+          role="student"
+          messages={messages}
+          setMessages={setMessages}
+          initialActiveChat={activeChatId}
+          activeChatContext={activeChatContext}
+          setActiveChatContext={setActiveChatContext}
+          projects={projects}
+          serviceOrders={serviceOrders}
+          isChatOpen={isChatOpen || safeTab === 'pesan'}
+          onClose={() => {
+            setIsChatOpen(false);
+            if (safeTab === 'pesan') setActiveTab('cari');
+          }}
+          sendNotification={sendNotification}
+          setActiveTab={setActiveTab}
+        />
 
         {safeTab === 'cari' && (
           <div className="space-y-6">

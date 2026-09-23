@@ -731,7 +731,25 @@ export default function UMKMDashboard({
         )}
 
         {safeTab === 'dompet' && <DompetView role="umkm" currentUser={currentUser} onRequestTransaction={onRequestTransaction} transactions={transactions} />}
-        <ChatView currentUser={currentUser} users={users} role="umkm" messages={messages} setMessages={setMessages} initialActiveChat={activeChatId} activeChatContext={activeChatContext} setActiveChatContext={setActiveChatContext} projects={projects} isChatOpen={isChatOpen || safeTab === 'pesan'} onClose={() => { setIsChatOpen(false); if(safeTab === 'pesan') setActiveTab('project'); }} sendNotification={sendNotification} />
+        <ChatView
+          currentUser={currentUser}
+          users={users}
+          role="umkm"
+          messages={messages}
+          setMessages={setMessages}
+          initialActiveChat={activeChatId}
+          activeChatContext={activeChatContext}
+          setActiveChatContext={setActiveChatContext}
+          projects={projects}
+          serviceOrders={serviceOrders}
+          isChatOpen={isChatOpen || safeTab === 'pesan'}
+          onClose={() => {
+            setIsChatOpen(false);
+            if (safeTab === 'pesan') setActiveTab('project');
+          }}
+          sendNotification={sendNotification}
+          setActiveTab={setActiveTab}
+        />
 
         {safeTab === 'project' && (
           <div className="space-y-6">
@@ -860,6 +878,13 @@ export default function UMKMDashboard({
                               </div>
                               
                               <div className="flex items-center gap-2 flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartChat(acceptedApplicant.studentId, project.id)}
+                                  className="bg-blue-50 border border-blue-200 hover:bg-blue-100 text-blue-700 px-3.5 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 shadow-2xs"
+                                >
+                                  <MessageCircle size={14} /> Chat Mahasiswa
+                                </button>
                                 {project.status === 'Menunggu Review' && (
                                   <>
                                     <button onClick={() => { setRejectForm(project.id); setRejectReason(''); }} className="bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 px-4 py-2 rounded-lg text-xs font-bold transition-colors">Tolak & Banding</button>
@@ -1151,19 +1176,33 @@ export default function UMKMDashboard({
                                     </div>
                                   )}
 
-                                  {applicant.status === 'Menunggu' && project.status === 'open' && (
-                                    <div className="mt-4 flex gap-2 justify-end border-t border-slate-200 pt-3">
-                                      <button onClick={() => handleStartChat(applicant.studentId, project.id)} className="text-xs bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold px-4 py-2 rounded-xl flex items-center">
-                                        <MessageCircle size={14} className="mr-1.5" /> Chat
-                                      </button>
-                                      <button onClick={() => onUpdateApplicantStatus(project.id, applicant.studentId, 'Ditolak')} className="text-xs bg-red-50 hover:bg-red-100 text-red-700 font-bold px-4 py-2 rounded-xl">
-                                        Tolak
-                                      </button>
-                                      <button onClick={() => onUpdateApplicantStatus(project.id, applicant.studentId, 'Diterima')} className="text-xs bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-2 rounded-xl">
-                                        Terima & Pilih
-                                      </button>
-                                    </div>
-                                  )}
+                                  <div className="mt-4 flex gap-2 justify-end border-t border-slate-200 pt-3">
+                                    <button 
+                                      type="button" 
+                                      onClick={() => handleStartChat(applicant.studentId, project.id)} 
+                                      className="text-xs bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold px-4 py-2 rounded-xl flex items-center shadow-2xs"
+                                    >
+                                      <MessageCircle size={14} className="mr-1.5" /> Chat
+                                    </button>
+                                    {applicant.status === 'Menunggu' && project.status === 'open' && (
+                                      <>
+                                        <button 
+                                          type="button" 
+                                          onClick={() => onUpdateApplicantStatus(project.id, applicant.studentId, 'Ditolak')} 
+                                          className="text-xs bg-red-50 hover:bg-red-100 text-red-700 font-bold px-4 py-2 rounded-xl"
+                                        >
+                                          Tolak
+                                        </button>
+                                        <button 
+                                          type="button" 
+                                          onClick={() => onUpdateApplicantStatus(project.id, applicant.studentId, 'Diterima')} 
+                                          className="text-xs bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-2 rounded-xl"
+                                        >
+                                          Terima & Pilih
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
                                 </div>
                               );
                             })}

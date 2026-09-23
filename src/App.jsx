@@ -809,6 +809,21 @@ export default function App() {
 
     if (project) {
       if (status === 'Diterima') {
+        // Kirim pesan otomatis ke chat penerimaan proyek
+        const chatId = `chat::${studentId}::${project.umkmId || currentUser?.id}::${project.id}`;
+        const acceptChatMsg = {
+          id: 'm_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+          chatId: chatId,
+          senderId: currentUser.id,
+          senderName: currentUser.name || 'Mitra UMKM',
+          text: `🎉 Selamat! Lamaran Anda telah DITERIMA oleh ${currentUser.name}.\n\nProyek "${project.title}" resmi berjalan. Silakan mulai pengerjaan dan gunakan ruang obrolan ini untuk berdiskusi.\n\n⏳ Batas Waktu: ${project.deadline || 'Sesuai kesepakatan'}\n💼 Honor Escrow: Rp ${Number(project.budget || 0).toLocaleString('id-ID')}`,
+          timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+          projectId: project.id,
+          createdAt: new Date().toISOString()
+        };
+        setMessages(prev => [...prev, acceptChatMsg]);
+        saveDocToCloud('messages', acceptChatMsg.id, acceptChatMsg);
+
         sendNotification({
           userId: studentId,
           role: 'student',
@@ -1136,6 +1151,21 @@ export default function App() {
 
     setServiceOrders(prev => [newOrder, ...prev]);
     saveDocToCloud('service_orders', newOrder.id, newOrder);
+
+    // Kirim pesan otomatis ke chat pesanan jasa
+    const orderChatId = `chat::${providerId}::${currentUser.id}::order_${newOrder.id}`;
+    const orderChatMsg = {
+      id: 'm_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+      chatId: orderChatId,
+      senderId: currentUser.id,
+      senderName: currentUser.name,
+      text: `🛍️ Pesanan Jasa Baru: "${service.title}"\n\n💼 Nilai Transaksi: Rp ${priceNum.toLocaleString('id-ID')}\n📝 Catatan/Brief: "${briefNotes || 'Pesanan standar'}"\n⏳ Estimasi Pengerjaan: ${service.deliveryDays || '3'} Hari\n\nDana telah dialokasikan aman ke Escrow GigSkill.`,
+      timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+      projectId: `order_${newOrder.id}`,
+      createdAt: new Date().toISOString()
+    };
+    setMessages(prev => [...prev, orderChatMsg]);
+    saveDocToCloud('messages', orderChatMsg.id, orderChatMsg);
 
     // Notifikasi ke penyedia jasa (Mahasiswa atau sesama UMKM)
     sendNotification({
@@ -1586,6 +1616,22 @@ export default function App() {
 
     setProjects(prev => prev.map(p => p.id === projectId ? updatedProject : p));
     saveDocToCloud('projects', projectId, updatedProject);
+
+    // Otomatis buat pesan lamaran di saluran chat
+    const targetUmkmId = targetProject.umkmId || 'u2';
+    const appChatId = `chat::${currentUser.id}::${targetUmkmId}::${targetProject.id}`;
+    const proposalChatMsg = {
+      id: 'm_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+      chatId: appChatId,
+      senderId: currentUser.id,
+      senderName: currentUser.name || 'Mahasiswa Pelamar',
+      text: `Halo, saya telah mengajukan lamaran untuk proyek "${targetProject.title}".\n\n📝 Proposal:\n"${proposal.trim() || 'Saya siap dan berminat mengerjakan proyek ini.'}"\n\n💼 Honor Proyek: Rp ${Number(targetProject.budget || 0).toLocaleString('id-ID')}\n⏳ Batas Waktu: ${targetProject.deadline || 'Sesuai kesepakatan'}`,
+      timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+      projectId: targetProject.id,
+      createdAt: new Date().toISOString()
+    };
+    setMessages(prev => [...prev, proposalChatMsg]);
+    saveDocToCloud('messages', proposalChatMsg.id, proposalChatMsg);
 
     if (targetProject) {
       sendNotification({
