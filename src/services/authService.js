@@ -16,15 +16,52 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from '../firebase.js';
 
-// Registrasi akun online ke Firebase Auth + Simpan Profil ke Firestore
+// Registrasi akun ke Cloud Firestore + Firebase Auth (jika didukung)
 export async function registerWithFirebase(userData) {
   try {
-    const userCredential = await createUserWithEmailAndPassword(auth, userData.email, userData.password);
-    const user = userCredential.user;
+    const cleanEmail = (userData.email || '').trim().toLowerCase();
+    const cleanPassword = userData.password || '';
+
+    // 1. Cek apakah email sudah terdaftar di Firestore
+    if (db) {
+      try {
+        const checkQ = query(collection(db, 'users'), where('email', '==', cleanEmail));
+        const checkSnap = await getDocs(checkQ);
+        if (!checkSnap.empty) {
+          return { 
+            success: false, 
+            error: 'Email ini sudah terdaftar. Silakan masuk atau gunakan email lain.' 
+          };
+        }
+      } catch (checkErr) {
+        console.warn('Firestore check notice:', checkErr);
+      }
+    }
+
+    let uid = 'u_cloud_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+
+    // 2. Coba daftarkan ke Firebase Auth jika password minimal 6 karakter
+    if (auth && cleanPassword.length >= 6) {
+      try {
+        const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, cleanPassword);
+        if (userCredential && userCredential.user) {
+          uid = userCredential.user.uid;
+        }
+      } catch (fbAuthErr) {
+        console.warn('Firebase Auth notice (falling back to direct cloud Firestore record):', fbAuthErr.code, fbAuthErr.message);
+        if (fbAuthErr.code === 'auth/email-already-in-use') {
+          return { 
+            success: false, 
+            error: 'Email ini sudah terdaftar. Silakan gunakan email lain atau masuk.' 
+          };
+        }
+      }
+    }
 
     const profileData = {
-      id: user.uid,
-      email: userData.email,
+      id: uid,
+      email: cleanEmail,
+      password: cleanPassword, // disimpan untuk autentikasi multi-perangkat cross-browser
       name: userData.name || '',
       role: userData.role || 'student',
       univ: userData.univ || '',
@@ -41,15 +78,17 @@ export async function registerWithFirebase(userData) {
     // Bersihkan field undefined sebelum simpan
     Object.keys(profileData).forEach(k => profileData[k] === undefined && delete profileData[k]);
 
-    await setDoc(doc(db, 'users', user.uid), profileData);
+    // 3. Simpan profil ke Cloud Firestore agar dapat diakses dari laptop, HP, & browser mana pun
+    if (db) {
+      await setDoc(doc(db, 'users', uid), profileData);
+    }
+
     return { success: true, user: profileData };
   } catch (error) {
-    console.error('Firebase Register Error:', error);
-    let message = 'Gagal mendaftar. Silakan coba lagi.';
+    console.error('Register Cloud Error:', error);
+    let message = 'Gagal mendaftar. Silakan periksa kembali data Anda.';
     if (error.code === 'auth/email-already-in-use') {
-      message = 'Email ini sudah terdaftar. Silakan gunakan email lain atau login.';
-    } else if (error.code === 'auth/weak-password') {
-      message = 'Password terlalu lemah. Minimal 6 karakter.';
+      message = 'Email ini sudah terdaftar. Silakan gunakan email lain atau masuk.';
     } else if (error.code === 'auth/invalid-email') {
       message = 'Format email tidak valid.';
     }
@@ -57,47 +96,128 @@ export async function registerWithFirebase(userData) {
   }
 }
 
-// Login akun online dengan Firebase Auth
+// Login akun dengan Cloud Firestore & Firebase Auth
 export async function loginWithFirebase(email, password) {
   try {
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    const user = userCredential.user;
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const cleanPassword = password || '';
 
-    const userDocRef = doc(db, 'users', user.uid);
-    const userSnap = await getDoc(userDocRef);
+    // 1. Cari data akun di Cloud Firestore
+    if (db) {
+      try {
+        const q = query(collection(db, 'users'), where('email', '==', cleanEmail));
+        const snap = await getDocs(q);
 
-    if (userSnap.exists()) {
-      return { success: true, user: { ...userSnap.data(), id: user.uid } };
-    } else {
-      // Fallback jika profil firestore belum ada
-      const fallbackUser = {
-        id: user.uid,
-        email: user.email,
-        name: user.displayName || user.email.split('@')[0],
-        role: 'student',
-        balance: 0,
-        verified: false,
-        isDummy: false
-      };
-      await setDoc(userDocRef, fallbackUser);
-      return { success: true, user: fallbackUser };
+        if (!snap.empty) {
+          const userDoc = snap.docs[0].data();
+          const docId = snap.docs[0].id;
+
+          // Bandingkan password
+          if (userDoc.password === cleanPassword) {
+            // Coba sinkronisasi sesi ke Firebase Auth jika ada
+            if (auth && cleanPassword.length >= 6) {
+              try {
+                await signInWithEmailAndPassword(auth, cleanEmail, cleanPassword);
+              } catch (e) {}
+            }
+
+            return { 
+              success: true, 
+              user: { ...userDoc, id: docId } 
+            };
+          } else {
+            return { 
+              success: false, 
+              error: 'Password yang Anda masukkan salah. Silakan periksa kembali.' 
+            };
+          }
+        }
+      } catch (dbErr) {
+        console.warn('Firestore query notice:', dbErr);
+      }
     }
+
+    // 2. Jika belum ditemukan di query Firestore langsung, coba periksa Firebase Auth
+    if (auth && cleanPassword.length >= 6) {
+      try {
+        const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, cleanPassword);
+        const user = userCredential.user;
+
+        if (db) {
+          const userDocRef = doc(db, 'users', user.uid);
+          const userSnap = await getDoc(userDocRef);
+
+          if (userSnap.exists()) {
+            return { success: true, user: { ...userSnap.data(), id: user.uid } };
+          }
+        }
+
+        const fallbackUser = {
+          id: user.uid,
+          email: user.email,
+          password: cleanPassword,
+          name: user.displayName || user.email.split('@')[0],
+          role: 'student',
+          balance: 0,
+          verified: false,
+          isDummy: false
+        };
+        return { success: true, user: fallbackUser };
+      } catch (authErr) {
+        if (authErr.code === 'auth/wrong-password') {
+          return { 
+            success: false, 
+            error: 'Password yang Anda masukkan salah. Silakan periksa kembali.' 
+          };
+        } else if (authErr.code === 'auth/user-not-found') {
+          return { 
+            success: false, 
+            error: 'Akun dengan email ini belum terdaftar. Silakan daftar terlebih dahulu.' 
+          };
+        }
+      }
+    }
+
+    // 3. Jika akun tidak ada di Firestore dan tidak ada di Auth
+    return { 
+      success: false, 
+      error: 'Akun dengan email ini belum terdaftar. Silakan daftar terlebih dahulu.' 
+    };
   } catch (error) {
     console.error('Firebase Login Error:', error);
-    let message = 'Email atau password salah!';
-    if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
-      message = 'Email atau password tidak sesuai.';
-    } else if (error.code === 'auth/too-many-requests') {
-      message = 'Terlalu banyak percobaan login gagal. Silakan coba sesaat lagi.';
-    }
-    return { success: false, error: message };
+    return { 
+      success: false, 
+      error: 'Terjadi kesalahan saat masuk. Silakan coba lagi.' 
+    };
+  }
+}
+
+// Sinkronisasi realtime pengguna terdaftar dari Cloud Firestore ke aplikasi
+export function subscribeToCloudUsers(onUsersUpdated) {
+  if (!db) return () => {};
+  try {
+    const usersCol = collection(db, 'users');
+    return onSnapshot(usersCol, (snapshot) => {
+      const cloudUsers = [];
+      snapshot.forEach(docSnap => {
+        cloudUsers.push({ ...docSnap.data(), id: docSnap.id });
+      });
+      onUsersUpdated(cloudUsers);
+    }, (error) => {
+      console.warn('Realtime cloud users sync notice:', error);
+    });
+  } catch (e) {
+    console.warn('Cannot subscribe to cloud users:', e);
+    return () => {};
   }
 }
 
 // Logout dari Firebase
 export async function logoutFromFirebase() {
   try {
-    await signOut(auth);
+    if (auth) {
+      await signOut(auth);
+    }
     return { success: true };
   } catch (error) {
     console.error('Firebase Logout Error:', error);

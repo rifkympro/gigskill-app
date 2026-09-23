@@ -17,7 +17,7 @@ import UMKMDashboard from './components/dashboard/UMKMDashboard.jsx';
 import AdminDashboard from './components/dashboard/AdminDashboard.jsx';
 import VerifyCertificatePage from './components/verification/VerifyCertificatePage.jsx';
 import CertificateModal from './components/dashboard/CertificateModal.jsx';
-import { registerWithFirebase, loginWithFirebase, logoutFromFirebase } from './services/authService.js';
+import { registerWithFirebase, loginWithFirebase, logoutFromFirebase, subscribeToCloudUsers } from './services/authService.js';
 import { db } from './firebase.js';
 import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
 
@@ -271,6 +271,27 @@ export default function App() {
     }
   }, [currentUser]);
 
+  // Sinkronisasi realtime daftar pengguna dari Cloud Firestore ke state aplikasi
+  React.useEffect(() => {
+    const unsubscribe = subscribeToCloudUsers((cloudUsers) => {
+      if (cloudUsers && cloudUsers.length > 0) {
+        setUsers(prevUsers => {
+          let updated = [...prevUsers];
+          cloudUsers.forEach(cu => {
+            const index = updated.findIndex(u => u.id === cu.id || u.email.toLowerCase() === cu.email.toLowerCase());
+            if (index >= 0) {
+              updated[index] = { ...updated[index], ...cu };
+            } else {
+              updated.push(cu);
+            }
+          });
+          return updated;
+        });
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
   // Keep currentUser synced if user balance/profile changes in users list
   React.useEffect(() => {
     if (currentUser) {
@@ -391,43 +412,32 @@ export default function App() {
 
     const roleName = userData.role === 'student' ? 'Mahasiswa' : 'UMKM';
 
-    // 1. Coba registrasi ke Firebase Auth + Firestore
     try {
       const fbResult = await registerWithFirebase(userData);
       
-      let newUserId;
-      let finalUserData;
-
-      if (fbResult.success) {
-        newUserId = fbResult.user.id;
-        finalUserData = {
-          ...fbResult.user,
-          password: userData.password // simpan password lokal untuk konsistensi session offline
-        };
-      } else {
-        // Jika offline atau error konfigurasi, buat akun lokal dengan fallback
-        newUserId = 'u_' + Date.now();
-        finalUserData = {
-          ...userData,
-          id: newUserId,
-          balance: 0,
-          verified: false,
-          isDummy: false,
-          createdAt: new Date().toISOString(),
-          ...(userData.role === 'student' ? { skills: [], portfolios: [] } : {})
-        };
-        console.warn('Firebase register notice, using localized profile:', fbResult.error);
+      if (!fbResult.success) {
+        showToast(fbResult.error || 'Gagal mendaftar. Silakan coba lagi.', 'error');
+        setAuthLoading(false);
+        return;
       }
 
-      setUsers(prev => [...prev, finalUserData]);
+      const finalUserData = {
+        ...fbResult.user,
+        password: userData.password
+      };
+
+      setUsers(prev => {
+        const filtered = prev.filter(u => u.id !== finalUserData.id && u.email.toLowerCase() !== finalUserData.email.toLowerCase());
+        return [...filtered, finalUserData];
+      });
 
       // Kirim notifikasi selamat datang ke pengguna baru
       sendNotification({
-        userId: newUserId,
+        userId: finalUserData.id,
         role: userData.role,
         type: 'welcome',
         title: 'Selamat Datang di GigSkill! 👋',
-        message: `Akun ${roleName} Anda telah dibuat. Lengkapi profil dan ajukan verifikasi berkas untuk mulai bertransaksi dengan aman.`,
+        message: `Akun ${roleName} Anda telah dibuat dan tersimpan di cloud. Lengkapi profil dan ajukan verifikasi berkas untuk mulai bertransaksi dengan aman.`,
         actionType: 'open_profile'
       });
 
@@ -442,7 +452,7 @@ export default function App() {
       });
 
       showToast(
-        `Pendaftaran ${roleName} Berhasil! Silakan masuk.`,
+        `Pendaftaran ${roleName} Berhasil! Silakan masuk dengan akun Anda.`,
         'success'
       );
 
@@ -459,34 +469,42 @@ export default function App() {
     setAuthLoading(true);
 
     try {
-      // 1. Cek dulu apakah akun demo / lokal yang sudah terdaftar
-      const localUser = users.find(
-        (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === password
+      const cleanEmail = email.trim().toLowerCase();
+
+      // 1. Cek dulu apakah akun ada di cache / data lokal
+      const localUserWithEmail = users.find(
+        (u) => u.email.toLowerCase() === cleanEmail
       );
 
-      if (localUser) {
-        setCurrentUser(localUser);
-        localStorage.setItem('gigskill_current_user', JSON.stringify(localUser));
+      if (localUserWithEmail) {
+        if (localUserWithEmail.password === password) {
+          setCurrentUser(localUserWithEmail);
+          localStorage.setItem('gigskill_current_user', JSON.stringify(localUserWithEmail));
 
-        try {
-          if (typeof window !== 'undefined' && window.location.search) {
-            window.history.replaceState({}, document.title, window.location.pathname);
+          try {
+            if (typeof window !== 'undefined' && window.location.search) {
+              window.history.replaceState({}, document.title, window.location.pathname);
+            }
+          } catch (e) {}
+
+          if (localUserWithEmail.role === 'student') {
+            navigateTo('studentDashboard');
+          } else if (localUserWithEmail.role === 'umkm') {
+            navigateTo('umkmDashboard');
+          } else if (localUserWithEmail.role === 'admin') {
+            navigateTo('adminDashboard');
           }
-        } catch (e) {}
 
-        if (localUser.role === 'student') {
-          navigateTo('studentDashboard');
-        } else if (localUser.role === 'umkm') {
-          navigateTo('umkmDashboard');
-        } else if (localUser.role === 'admin') {
-          navigateTo('adminDashboard');
+          showToast(`Selamat datang, ${localUserWithEmail.name}!`, 'success');
+          return;
+        } else {
+          // Email terdaftar di lokal, tetapi password salah
+          showToast('Password yang Anda masukkan salah. Silakan periksa kembali.', 'error');
+          return;
         }
-
-        showToast(`Selamat datang, ${localUser.name}!`, 'success');
-        return;
       }
 
-      // 2. Jika tidak ada di lokal, verifikasi langsung dengan Firebase Auth online
+      // 2. Jika tidak ada di cache lokal, verifikasi langsung ke Cloud Firestore & Firebase Auth
       const fbResult = await loginWithFirebase(email.trim(), password);
 
       if (fbResult.success) {
@@ -497,9 +515,9 @@ export default function App() {
 
         // Update state users jika belum ada
         setUsers(prev => {
-          const exists = prev.find(u => u.id === loggedUser.id || u.email === loggedUser.email);
+          const exists = prev.find(u => u.id === loggedUser.id || u.email.toLowerCase() === loggedUser.email.toLowerCase());
           if (exists) {
-            return prev.map(u => (u.id === loggedUser.id || u.email === loggedUser.email) ? { ...u, ...loggedUser } : u);
+            return prev.map(u => (u.id === loggedUser.id || u.email.toLowerCase() === loggedUser.email.toLowerCase()) ? { ...u, ...loggedUser } : u);
           }
           return [...prev, loggedUser];
         });
@@ -521,8 +539,9 @@ export default function App() {
           navigateTo('adminDashboard');
         }
 
-        showToast(`Selamat datang, ${loggedUser.name}! (Firebase Auth)`, 'success');
+        showToast(`Selamat datang, ${loggedUser.name}!`, 'success');
       } else {
+        // Tampilkan pesan spesifik: Password salah ATAU Akun tidak terdaftar
         showToast(fbResult.error || 'Email atau password salah!', 'error');
       }
     } catch (err) {
